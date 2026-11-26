@@ -92,7 +92,7 @@
     $('pause').hidden = true;
     board.style.visibility = 'visible';
     $('callout').hidden = true;
-    guide = { grabbed: false, delivered: false, ropeHintId: null, ropeHintUntil: 0, firstWarn: true };
+    guide = { grabbed: false, delivered: false, ropeHinted: false, ropeHintId: null, ropeHintUntil: 0, firstWarn: true, explainFall: false, lastSwitch: -Infinity };
     lastDamage = 0;
     hudSteady = Rules.createSteady(300);
     $('toast').hidden = true;
@@ -290,13 +290,21 @@
     $('hud-ropes').textContent = String(game.ropesLeft);
   }
 
-  /** The first item resting in the room ends the goal hint and may show the rope hint. */
+  /**
+   * The first item resting in the room ends the goal hint and shows the rope
+   * hint (until the player has tied something once). The fall explanation is
+   * drawn on the canvas, so both can be on screen during a warning, which is
+   * the moment a rope helps most.
+   */
   function updateGuide(est) {
-    if (!guide || guide.delivered || !est.deliveredCount) return;
+    if (!guide || !est.deliveredCount) return;
     guide.delivered = true;
-    if (Store.get('ropeUsed', false)) return;
+    if (guide.ropeHinted || Store.get('ropeUsed', false)) return;
+    // right after a switch, items that look at rest are about to fall
+    if (game.world.time - guide.lastSwitch < 1500) return;
     var it = game.world.items.find(function (x) { return game.itemStatus(x) === 'delivered'; });
     if (!it) return;
+    guide.ropeHinted = true;
     guide.ropeHintId = it.id;
     guide.ropeHintUntil = game.world.time + 6000;
     callout(t(touchMode ? 'hint.ropeTouch' : 'hint.ropeMouse'), 6000);
@@ -322,15 +330,16 @@
         warning = { dir: e.dir, at: e.at };
         Sfx.beep(false);
         try { if (navigator.vibrate) navigator.vibrate([60, 80, 60]); } catch (err) { /* ignore */ }
-        // explain what a switch does for the first two games that reach one
+        // explain what a switch does, on the first warning of the first two games that reach one
         var seen = Store.get('gravitySeen', 0);
-        if (guide && guide.firstWarn && seen < 2) {
-          callout(t('warn.fall'), 3000);
-          Store.set('gravitySeen', seen + 1);
+        if (guide) {
+          guide.explainFall = guide.firstWarn && seen < 2;
+          if (guide.explainFall) Store.set('gravitySeen', seen + 1);
+          guide.firstWarn = false;
         }
-        if (guide) guide.firstWarn = false;
       } else if (e.type === 'switch') {
         warning = null;
+        if (guide) guide.lastSwitch = game.world.time;
         Sfx.beep(true);
       } else if (e.type === 'contact') {
         if (e.speed > 3) Sfx.thud(e.speed / 16);
@@ -358,7 +367,7 @@
       info: info,
       heldId: heldId,
       time: game.world.time,
-      warning: warning ? { dir: warning.dir, remaining: warning.at - game.world.time, label: t('warn.dir', { dir: t('dir.' + warning.dir) }) } : null,
+      warning: warning ? { dir: warning.dir, remaining: warning.at - game.world.time, label: t('warn.dir', { dir: t('dir.' + warning.dir) }), sub: guide && guide.explainFall ? t('warn.fall') : null } : null,
       labels: { bay: t('area.bay'), room: t('area.room'), door: t('area.door') },
       guide: guideState()
     });

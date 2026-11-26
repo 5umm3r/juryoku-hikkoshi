@@ -187,6 +187,22 @@ test('replay (no guide in state) draws no guide text; the warning names the new 
   assert.ok(texts.includes('3'));
 });
 
+test('the first warning can carry a second line explaining the fall', () => {
+  const game = boxGame();
+  advanceFor(game, 200);
+  const { ctx, calls } = recordingCtx();
+  Render.draw(ctx, 1280, 740, liveState(game, { warning: { dir: 'left', remaining: 2500, label: 'GRAVITY-LEFT', sub: 'FALLS-THAT-WAY' } }));
+  const label = calls.find((c) => c.text === 'GRAVITY-LEFT');
+  const sub = calls.find((c) => c.text === 'FALLS-THAT-WAY');
+  assert.ok(label && sub, 'both lines drawn');
+  assert.ok(sub.y > label.y, 'explanation sits under the direction');
+  // with the goal guide still on, its label yields the room center to the warning
+  const r2 = recordingCtx();
+  Render.draw(r2.ctx, 1280, 740, liveState(game, { warning: { dir: 'left', remaining: 2500, label: 'GRAVITY-LEFT' }, guide: { goal: true, goalText: 'MOVE-HERE' } }));
+  assert.ok(!r2.calls.some((c) => c.text === 'MOVE-HERE'));
+  assert.ok(Number(sub.font.match(/(\d+)px/)[1]) >= 28, sub.font);
+});
+
 test('HUD value holder ignores a value that flips back within the hold time', () => {
   const s = Rules.createSteady(300);
   assert.equal(s.update('A', 0), 'A');

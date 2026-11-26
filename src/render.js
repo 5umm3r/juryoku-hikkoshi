@@ -272,7 +272,7 @@
   }
 
   /** Route bay -> door -> room, and a pulsing frame on the room. */
-  function drawGoal(ctx, cfg, doorRect, text, time) {
+  function drawGoal(ctx, cfg, doorRect, text, time, frameOnly) {
     var bay = cfg.bay;
     var room = cfg.room;
     var d = doorRect;
@@ -281,6 +281,7 @@
     ctx.strokeStyle = 'rgba(' + C.warn + ',' + (0.45 + 0.5 * pulse).toFixed(3) + ')';
     ctx.lineWidth = 10;
     ctx.strokeRect(room.x + 5, room.y + 5, room.w - 10, room.h - 10);
+    if (frameOnly) return; // the gravity warning owns the middle of the room
     var dc = { x: d.x + d.w / 2, y: d.y + d.h / 2 };
     var a = vertical ? { x: bay.x + bay.w / 2, y: dc.y } : { x: dc.x, y: bay.y + bay.h / 2 };
     var b = vertical ? { x: room.x + 150, y: dc.y } : { x: dc.x, y: room.y + 150 };
@@ -343,7 +344,7 @@
     drawBuilding(ctx, state.cfg, state.bounds, snap.door, state.doorRect);
     if (state.labels) drawAreaLabels(ctx, state.cfg, state.doorRect, state.labels);
     var guide = state.guide;
-    if (guide && guide.goal) drawGoal(ctx, state.cfg, state.doorRect, guide.goalText, state.time);
+    if (guide && guide.goal) drawGoal(ctx, state.cfg, state.doorRect, guide.goalText, state.time, !!state.warning);
 
     snap.bodies.forEach(function (b) {
       var info = state.info.get(b[0]);
@@ -381,6 +382,7 @@
       if (state.warning.label) {
         var ly = state.warning.dir === 'down' ? cy - 200 : cy + 200;
         plateText(ctx, state.warning.label, cx, ly, '800 52px system-ui, sans-serif', '#ffffff', 'rgba(22, 25, 28, 0.85)');
+        if (state.warning.sub) plateText(ctx, state.warning.sub, cx, ly + 66, '700 34px system-ui, sans-serif', '#16191c', '#ffffff');
       }
     }
     // current gravity indicator, top-right corner of the room
