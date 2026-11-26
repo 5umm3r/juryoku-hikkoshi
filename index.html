@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#16191c">
+  <title>重力引越</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></symbol>
+    <symbol id="i-retry" viewBox="0 0 24 24"><path d="M12 5a7 7 0 1 1-6.6 4.7l1.9.6A5 5 0 1 0 12 7v3L7.5 6 12 2z"/></symbol>
+    <symbol id="i-share" viewBox="0 0 24 24"><path d="M11 4h2v10h-2z"/><path d="M12 2l5 5h-10z"/><path d="M5 12h2v7h10v-7h2v9H5z"/></symbol>
+    <symbol id="i-replay" viewBox="0 0 24 24"><path d="M4 5h2v14H4z"/><path d="M8 12l10-7v14z"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M10 5l-7 7 7 7v-4h10V9H10z"/></symbol>
+    <symbol id="i-rope" viewBox="0 0 24 24"><path d="M5 3l16 16-2 2L3 5z"/><path d="M19 3l2 2L5 21l-2-2z"/></symbol>
+    <symbol id="i-truck" viewBox="0 0 24 24"><path d="M2 6h12v10H2z"/><path d="M15 9h4l3 3v4h-7z"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/></symbol>
+  </svg>
+
+  <div id="app">
+    <!-- title -->
+    <section id="screen-title" class="screen">
+      <div class="title-wrap">
+        <h1 data-i18n="app.title"></h1>
+        <p class="tagline" data-i18n="app.tagline"></p>
+        <div class="menu">
+          <button id="btn-daily" class="btn btn-primary" type="button"></button>
+          <button id="btn-free" class="btn" type="button" data-i18n="menu.free"></button>
+        </div>
+        <p class="howto" data-i18n="menu.howto"></p>
+        <dl class="records">
+          <div><dt id="best-label"></dt></div>
+          <div><dt id="ach-label"></dt></div>
+        </dl>
+        <ul id="ach-list" class="ach-list"></ul>
+      </div>
+    </section>
+
+    <!-- game -->
+    <section id="screen-game" class="screen" hidden>
+      <header class="hud">
+        <div class="hud-item"><span class="hud-k" data-i18n="hud.time"></span><span id="hud-time" class="hud-v">60.0</span></div>
+        <div class="hud-item"><span class="hud-k" data-i18n="hud.ropes"></span><span id="hud-ropes" class="hud-v ropes"></span></div>
+        <div class="hud-item"><span class="hud-k" data-i18n="hud.damage"></span><span id="hud-damage" class="hud-v">¥0</span></div>
+        <div class="hud-item"><span class="hud-k" data-i18n="hud.truck"></span><span id="hud-truck" class="hud-v">0</span></div>
+        <button id="btn-pause" class="icon-btn" type="button"><svg><use href="#i-pause"/></svg><span class="sr" data-i18n="hud.pause"></span></button>
+      </header>
+      <div id="stage" class="stage">
+        <canvas id="board"></canvas>
+        <div id="tutorial" class="tutorial" hidden></div>
+        <div id="toast" class="toast" hidden></div>
+      </div>
+      <div id="pause" class="pause" hidden>
+        <h2 data-i18n="pause.title"></h2>
+        <div class="menu">
+          <button id="btn-resume" class="btn btn-primary" type="button"><svg><use href="#i-play"/></svg><span data-i18n="pause.resume"></span></button>
+          <button id="btn-quit" class="btn" type="button"><svg><use href="#i-back"/></svg><span data-i18n="pause.quit"></span></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- result -->
+    <section id="screen-result" class="screen" hidden>
+      <div class="result-wrap">
+        <article class="invoice">
+          <div class="invoice-band"></div>
+          <h2 data-i18n="result.invoice"></h2>
+          <p id="inv-stage" class="inv-stage"></p>
+          <table class="inv-lines"><tbody id="inv-lines"></tbody></table>
+          <div class="inv-sum">
+            <div><span data-i18n="result.reward"></span><span id="inv-reward"></span></div>
+            <div><span data-i18n="result.damage"></span><span id="inv-damage" class="neg"></span></div>
+            <div class="inv-total"><span data-i18n="result.total"></span><span id="inv-total"></span></div>
+          </div>
+          <p id="inv-best" class="inv-best" hidden data-i18n="result.newBest"></p>
+          <p id="inv-comment" class="inv-comment"></p>
+          <h3 data-i18n="result.achievements"></h3>
+          <ul id="inv-ach" class="ach-list"></ul>
+        </article>
+        <div class="result-actions">
+          <button id="btn-retry" class="btn btn-primary" type="button"><svg><use href="#i-retry"/></svg><span data-i18n="result.retry"></span></button>
+          <button id="btn-replay" class="btn" type="button"><svg><use href="#i-replay"/></svg><span data-i18n="result.replay"></span></button>
+          <button id="btn-share" class="btn" type="button"><svg><use href="#i-share"/></svg><span data-i18n="result.share"></span></button>
+          <button id="btn-menu" class="btn" type="button"><svg><use href="#i-back"/></svg><span data-i18n="result.menu"></span></button>
+        </div>
+        <p id="share-note" class="share-note" hidden></p>
+      </div>
+      <div id="replay" class="replay" hidden>
+        <div class="replay-bar"><span data-i18n="replay.label"></span><button id="btn-replay-close" class="btn" type="button" data-i18n="replay.close"></button></div>
+        <canvas id="replay-canvas"></canvas>
+      </div>
+    </section>
+  </div>
+
+  <script src="vendor/matter.min.js"></script>
+  <script src="src/i18n.js"></script>
+  <script src="src/rules.js"></script>
+  <script src="src/sim.js"></script>
+  <script src="src/storage.js"></script>
+  <script src="src/audio.js"></script>
+  <script src="src/render.js"></script>
+  <script src="src/share.js"></script>
+  <script src="src/app.js"></script>
+</body>
+</html>
