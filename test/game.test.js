@@ -92,24 +92,16 @@ test('spawning onto the truck bay does not cost damage', () => {
   assert.equal(evs.filter((e) => e.type === 'damage').length, 0);
 });
 
-test('ropes: two per gravity period, roped items ignore gravity, reset after a switch', () => {
+test('roped items ignore gravity switches', () => {
   const game = Sim.createGame({ seed: 8 });
   const w = game.world;
-  const a = w.addFurniture('box', 400, 670);
-  const b = w.addFurniture('box', 500, 670);
-  const c = w.addFurniture('box', 600, 670);
+  const a = w.addFurniture('box', 400, 674);
+  while (w.time < 1000) game.advance(1000 / 60);
   assert.equal(game.toggleRope(a).ok, true);
-  assert.equal(game.toggleRope(b).ok, true);
-  assert.deepEqual(game.toggleRope(c), { ok: false, reason: 'limit' });
-  // releasing does not refund the count
-  assert.equal(game.toggleRope(b).ok, true);
-  assert.equal(game.toggleRope(c).ok, false);
   const ay = a.body.position.y;
   while (game.period < 1) game.advance(1000 / 60);
   for (let i = 0; i < 90; i++) game.advance(1000 / 60);
   assert.ok(Math.abs(a.body.position.y - ay) < 0.01, 'roped box does not move');
-  assert.equal(game.ropesLeft, 2);
-  assert.equal(game.toggleRope(c).ok, true);
 });
 
 test('delivered count at time-up: resting items inside the room only', () => {

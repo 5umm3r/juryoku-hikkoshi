@@ -26,7 +26,8 @@
   var DEFAULT_CONFIG = {
     bay: { x: 0, y: 0, w: 240, h: 700 },
     room: { x: 280, y: 0, w: 700, h: 700 },
-    door: { y: 520, h: 180 },
+    // door opening along the bay/room divider: offset from the divider's start and its length
+    door: { from: 520, size: 180 },
     wall: 200,
     substepMs: 1000 / 240,
     maxFrameMs: 100,
@@ -45,16 +46,37 @@
     spawnInterval: 2,
     spawnGraceMs: 1500,
     maxBodies: 24,
-    ropesPerPeriod: 2,
+    ropesMax: 3, // tied at the same time; untying gives the rope back
+    ropeContactPx: 4, // must touch a wall or floor within this distance to tie
     cooldownMs: 500,
     rest: { speed: 0.15, angularSpeed: 0.01 },
     flyingSpeed: 11,
+    // Damage. severity = relative speed x sqrt(mass ratio, clamped), so a heavy
+    // item nudging a light one at walking pace is harmless. Falls caused by a
+    // gravity switch are capped per period; careless drops are not.
+    massRatioClamp: [0.25, 4],
+    switchWindowMs: 4000,
+    switchCapRatio: 0.15,
     recordHz: 30,
     kinds: {
-      box: { w: 56, h: 50, density: 0.0006, friction: 0.6, stiffness: 0.2, sag: 0, threshold: 12, yenPerImpact: 60, cap: 1500, reward: 1200 },
-      fridge: { w: 60, h: 110, density: 0.003, friction: 0.4, stiffness: 0.035, sag: 0.55, threshold: 120, yenPerImpact: 25, cap: 12000, reward: 5000 },
-      piano: { w: 150, h: 80, density: 0.0025, friction: 0.5, stiffness: 0.045, sag: 0.45, threshold: 100, yenPerImpact: 40, cap: 20000, reward: 8000 },
-      fishbowl: { r: 22, density: 0.0012, friction: 0.2, stiffness: 0.15, sag: 0, threshold: 14, fragile: true, cap: 5000, reward: 3000 }
+      box: { w: 56, h: 50, density: 0.0006, friction: 0.6, stiffness: 0.2, sag: 0, threshold: 7, yenPerImpact: 150, cap: 1200, reward: 1200 },
+      fridge: { w: 60, h: 110, density: 0.003, friction: 0.4, stiffness: 0.035, sag: 0.55, threshold: 6, yenPerImpact: 600, cap: 5000, reward: 5000 },
+      piano: { w: 150, h: 80, density: 0.0025, friction: 0.5, stiffness: 0.045, sag: 0.45, threshold: 6, yenPerImpact: 900, cap: 8000, reward: 8000 },
+      fishbowl: { r: 22, density: 0.0012, friction: 0.2, stiffness: 0.15, sag: 0, threshold: 7, switchBreak: 11, fragile: true, cap: 3000, reward: 3000 }
+    }
+  };
+
+  /** Bay/room/door geometry. Portrait puts the bay above the room. */
+  var LAYOUTS = {
+    landscape: {
+      bay: { x: 0, y: 0, w: 240, h: 700 },
+      room: { x: 280, y: 0, w: 700, h: 700 },
+      door: { from: 520, size: 180 }
+    },
+    portrait: {
+      bay: { x: 0, y: 0, w: 700, h: 240 },
+      room: { x: 0, y: 280, w: 700, h: 700 },
+      door: { from: 0, size: 180 }
     }
   };
 
@@ -135,8 +157,8 @@
     var T = cfg.wall;
     var bay = cfg.bay;
     var room = cfg.room;
-    var left = bay.x;
-    var right = room.x + room.w;
+    var left = Math.min(bay.x, room.x);
+    var right = Math.max(bay.x + bay.w, room.x + room.w);
     var top = Math.min(bay.y, room.y);
     var bottom = Math.max(bay.y + bay.h, room.y + room.h);
     var W = right - left;
@@ -151,17 +173,25 @@
       Bodies.rectangle(right + T / 2, top + H / 2, T, H + 2 * T, wallOpts('wall:right'))
     ];
     // divider between bay and room, with a door opening
-    var divX = bay.x + bay.w;
-    var divW = room.x - divX;
-    var doorTop = cfg.door.y;
-    var doorBottom = cfg.door.y + cfg.door.h;
-    if (doorTop > top) {
-      walls.push(Bodies.rectangle(divX + divW / 2, (top + doorTop) / 2, divW, doorTop - top, wallOpts('wall:divider')));
+    var vertical = room.x >= bay.x + bay.w; // bay left of the room
+    var doorFrom = cfg.door.from !== undefined ? cfg.door.from : cfg.door.y;
+    var doorSize = cfg.door.size !== undefined ? cfg.door.size : cfg.door.h;
+    // gravity pointing from the room toward the bay closes the door
+    var doorCloseDir = vertical ? 'left' : 'up';
+    var divRect = vertical
+      ? { x: bay.x + bay.w, y: top, w: room.x - (bay.x + bay.w), h: bottom - top }
+      : { x: left, y: bay.y + bay.h, w: right - left, h: room.y - (bay.y + bay.h) };
+    var doorRect = vertical
+      ? { x: divRect.x, y: doorFrom, w: divRect.w, h: doorSize }
+      : { x: doorFrom, y: divRect.y, w: doorSize, h: divRect.h };
+    function rectBody(r, label) {
+      return Bodies.rectangle(r.x + r.w / 2, r.y + r.h / 2, r.w, r.h, wallOpts(label));
     }
-    if (doorBottom < bottom) {
-      walls.push(Bodies.rectangle(divX + divW / 2, (doorBottom + bottom) / 2, divW, bottom - doorBottom, wallOpts('wall:divider')));
-    }
-    var door = Bodies.rectangle(divX + divW / 2, (doorTop + doorBottom) / 2, divW, cfg.door.h, wallOpts('wall:door'));
+    var segs = vertical
+      ? [{ x: divRect.x, y: top, w: divRect.w, h: doorRect.y - top }, { x: divRect.x, y: doorRect.y + doorRect.h, w: divRect.w, h: bottom - doorRect.y - doorRect.h }]
+      : [{ x: left, y: divRect.y, w: doorRect.x - left, h: divRect.h }, { x: doorRect.x + doorRect.w, y: divRect.y, w: right - doorRect.x - doorRect.w, h: divRect.h }];
+    segs.forEach(function (r) { if (r.w > 0.5 && r.h > 0.5) walls.push(rectBody(r, 'wall:divider')); });
+    var door = rectBody(doorRect, 'wall:door');
     door.collisionFilter.mask = 0; // starts open
     walls.push(door);
     Composite.add(engine.world, walls);
@@ -177,6 +207,8 @@
     var cooldown = Rules.createCooldown(cfg.cooldownMs);
     var listeners = [];
     var nextId = 1;
+    var lastSwitchAt = -Infinity;
+    var period = 0;
 
     function emit(ev) { listeners.forEach(function (fn) { fn(ev); }); }
 
@@ -192,7 +224,9 @@
         shapes: localShapes(body, kind),
         broken: false,
         roped: false,
-        damage: 0
+        damage: 0,
+        switchDamage: 0,
+        switchPeriod: -1
       };
       items.push(item);
       byBodyId.set(body.id, item);
@@ -210,9 +244,11 @@
       engine.gravity.x = v.x;
       engine.gravity.y = v.y;
       gravityDir = dir;
+      lastSwitchAt = simTime;
+      period++;
       wakeAll();
       // door closes while gravity points at it, so nothing slides back out
-      doorWantClosed = dir === 'left';
+      doorWantClosed = dir === doorCloseDir;
       updateDoor();
     }
 
@@ -337,8 +373,9 @@
           var other = t[1];
           var otherItem = t[2];
           if (!item) return;
-          var otherMass = otherItem ? otherItem.mass : item.mass;
-          var impact = rel * otherMass;
+          var ratio = otherItem ? otherItem.mass / item.mass : 1;
+          ratio = Math.min(cfg.massRatioClamp[1], Math.max(cfg.massRatioClamp[0], ratio));
+          var impact = rel * Math.sqrt(ratio);
           if (other.label === 'wall:ceiling' && gravityDir === 'up' && rel > 3) {
             emit({ type: 'ceiling', kind: item.kind, id: item.id, t: simTime });
           }
@@ -348,21 +385,48 @@
       });
     });
 
+    function inBay(item) {
+      var p = item.body.position;
+      return p.x >= bay.x && p.x <= bay.x + bay.w && p.y >= bay.y && p.y <= bay.y + bay.h;
+    }
+
     function registerImpact(item, impact, rel) {
       var spec = cfg.kinds[item.kind];
       if (item.broken || impact <= spec.threshold) return;
+      // nothing that happens on the truck is billed
+      if (inBay(item)) return;
+      // a fall caused by the latest gravity switch (item not held) is capped
+      var bySwitch = held !== item && simTime - lastSwitchAt < cfg.switchWindowMs;
+      if (bySwitch && item.switchPeriod !== period) {
+        item.switchPeriod = period;
+        item.switchDamage = 0;
+      }
       var yen;
       if (spec.fragile) {
+        if (bySwitch && spec.switchBreak && impact <= spec.switchBreak) return;
         item.broken = true;
-        yen = spec.cap;
+        yen = Math.min(spec.cap, spec.cap - item.damage);
         emit({ type: 'break', kind: item.kind, id: item.id, yen: yen, airborne: rel >= cfg.flyingSpeed, t: simTime });
       } else {
-        var room = spec.cap - item.damage;
-        yen = Math.min(room, Math.round((impact - spec.threshold) * spec.yenPerImpact));
+        yen = Math.round((impact - spec.threshold) * spec.yenPerImpact);
+        yen = Math.min(yen, spec.cap - item.damage);
+        if (bySwitch) yen = Math.min(yen, Math.round(spec.reward * cfg.switchCapRatio) - item.switchDamage);
         if (yen <= 0) return;
       }
+      if (bySwitch) item.switchDamage += yen;
       item.damage += yen;
-      emit({ type: 'damage', kind: item.kind, id: item.id, yen: yen, impact: impact, t: simTime });
+      emit({ type: 'damage', kind: item.kind, id: item.id, yen: yen, impact: impact, bySwitch: bySwitch, t: simTime });
+    }
+
+    /** Touching a wall, the floor, the ceiling or a closed door (axis-aligned bounds test). */
+    function touchesWall(item) {
+      var b = item.body.bounds;
+      var e = cfg.ropeContactPx;
+      var grown = { min: { x: b.min.x - e, y: b.min.y - e }, max: { x: b.max.x + e, y: b.max.y + e } };
+      return walls.some(function (w) {
+        if (w === door && !doorClosed) return false;
+        return Matter.Bounds.overlaps(grown, w.bounds);
+      });
     }
 
     function substep() {
@@ -427,7 +491,9 @@
       step: step,
       isInRoom: isInRoom,
       isResting: isResting,
+      touchesWall: touchesWall,
       snapshot: snapshot,
+      doorRect: doorRect,
       itemForBody: function (body) { return byBodyId.get((body.parent || body).id) || null; },
       on: function (fn) { listeners.push(fn); },
       get gravity() { return gravityDir; },
@@ -443,7 +509,8 @@
    * opts: { seed, firstPlay, config }
    */
   function createGame(opts) {
-    var world = createWorld(opts.config);
+    var layout = LAYOUTS[opts.layout || 'landscape'];
+    var world = createWorld(Object.assign({}, layout, opts.config || {}));
     var cfg = world.cfg;
     var rng = Rules.createRng(opts.seed);
     var order = Rules.furnitureOrder(rng, cfg.bag).slice(0, cfg.maxBodies);
@@ -452,7 +519,6 @@
     var schedule = times.map(function (t, i) { return { at: t * 1000, dir: dirs[i], warned: false, done: false }; });
     var queue = order.slice();
     var lastSpawn = -Infinity;
-    var ropesUsed = 0;
     var period = 0;
     var events = [];
     var log = [];
@@ -490,11 +556,18 @@
       var reachX = Math.max(0, cfg.bay.w / 2 - 90);
       var reachY = Math.max(0, cfg.bay.h / 2 - 90);
       var spot = null;
+      // perpendicular to gravity: also try beside the center (wide bays)
+      var lat = { x: Math.abs(g.y) * Math.max(0, cfg.bay.w / 2 - 100), y: Math.abs(g.x) * Math.max(0, cfg.bay.h / 2 - 100) };
+      var door = world.doorRect;
       for (var f = 1; f >= -1 && !spot; f -= 0.5) {
-        var x = cx + g.x * reachX * f;
-        var y = cy + g.y * reachY * f;
-        var probe = { min: { x: x - 80, y: y - 70 }, max: { x: x + 80, y: y + 70 } };
-        if (!Query.region(bodies, probe).length) spot = { x: x, y: y };
+        for (var l = 0; l < 3 && !spot; l++) {
+          var side = l === 0 ? 0 : l === 1 ? 1 : -1;
+          var x = cx + g.x * reachX * f + lat.x * side;
+          var y = cy + g.y * reachY * f + lat.y * side;
+          var probe = { min: { x: x - 80, y: y - 70 }, max: { x: x + 80, y: y + 70 } };
+          var overDoor = probe.max.x > door.x && probe.min.x < door.x + door.w && probe.max.y > door.y - 4 && probe.min.y < door.y + door.h + 4;
+          if (!overDoor && !Query.region(bodies, probe).length) spot = { x: x, y: y };
+        }
       }
       if (!spot) return;
       var x0 = spot.x;
@@ -569,7 +642,6 @@
           if (!s.done && now >= s.at) {
             s.done = true;
             world.setGravity(s.dir);
-            ropesUsed = 0;
             period++;
             pending.push({ type: 'switch', dir: s.dir, index: i });
           }
@@ -583,16 +655,20 @@
       return out;
     }
 
+    function ropedCount() {
+      return world.items.filter(function (it) { return it.roped; }).length;
+    }
+
     function toggleRope(item) {
       if (ended) return { ok: false, reason: 'ended' };
       if (item.roped) {
         world.setRoped(item, false);
         return { ok: true, roped: false };
       }
-      if (ropesUsed >= cfg.ropesPerPeriod) return { ok: false, reason: 'limit' };
+      if (ropedCount() >= cfg.ropesMax) return { ok: false, reason: 'limit' };
+      if (!world.touchesWall(item)) return { ok: false, reason: 'airborne' };
       if (world.held === item) world.setHeld(null);
       world.setRoped(item, true);
-      ropesUsed++;
       return { ok: true, roped: true };
     }
 
@@ -604,7 +680,8 @@
       advance: advance,
       finish: finish,
       toggleRope: toggleRope,
-      get ropesLeft() { return cfg.ropesPerPeriod - ropesUsed; },
+      get ropesLeft() { return cfg.ropesMax - ropedCount(); },
+      layout: opts.layout || 'landscape',
       get timeLeft() { return Math.max(0, cfg.duration * 1000 - world.time); },
       get queueLength() { return queue.length; },
       get ended() { return ended; },
@@ -621,6 +698,7 @@
 
   return {
     DEFAULT_CONFIG: DEFAULT_CONFIG,
+    LAYOUTS: LAYOUTS,
     POINTER_FILTER: { category: CATEGORY_POINTER, mask: CATEGORY_FURNITURE },
     mergeConfig: mergeConfig,
     createWorld: createWorld,

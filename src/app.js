@@ -6,8 +6,9 @@
   var yen = I18n.yen;
   var EPOCH = '2026-11-01'; // No.1 in JST
   var TOUCH_LIFT = 46; // CSS px: grab point sits above the finger
-  var TAP_MS = 260;
+  var LONG_PRESS_MS = 450;
   var TAP_MOVE = 10;
+  var DEBUG = /[?&]debug\b/.test(location.search);
   var ALL_ACH = ['ach.ceilingPiano', 'ach.flyingFish', 'ach.brokenBowl', 'ach.fridgeAvalanche', 'ach.spotless', 'ach.fullHouse', 'ach.leftover'];
 
   var $ = function (id) { return document.getElementById(id); };
@@ -35,6 +36,9 @@
   var tutorialTimer = 0;
   var lastResult = null;
   var replay = null;
+  var ropeArmed = false; // HUD rope button pressed: next tap/click ties or unties
+  var longPressTimer = 0;
+  var sharePrep = null;
 
   I18n.setLang('ja');
   I18n.apply(document);
@@ -50,8 +54,10 @@
   function renderTitle() {
     var d = daily();
     $('btn-daily').textContent = t('menu.daily', { no: d.no });
-    var best = Store.get('best', null);
-    $('best-label').textContent = best === null ? t('menu.noBest') : t('menu.best', { yen: yen(best) });
+    var bestDaily = Store.get(Rules.bestKey({ daily: true, no: d.no }), null);
+    var bestFree = Store.get(Rules.bestKey({ daily: false }), null);
+    $('best-label').textContent = t('menu.bestDaily', { no: d.no, yen: bestDaily === null ? t('menu.noRecord') : yen(bestDaily) }) +
+      '\n' + t('menu.bestFree', { yen: bestFree === null ? t('menu.noRecord') : yen(bestFree) });
     var got = Store.get('achievements', []);
     $('ach-label').textContent = t('menu.achievements', { n: got.length, total: ALL_ACH.length });
     var ul = $('ach-list');
@@ -70,7 +76,12 @@
   function start(m) {
     mode = m;
     var firstPlay = !Store.get('tutorialDone', false);
-    game = Sim.createGame({ seed: m.seed, firstPlay: firstPlay });
+    show('game');
+    var sr = stage.getBoundingClientRect();
+    var layout = sr.height > sr.width * 1.05 ? 'portrait' : 'landscape';
+    game = Sim.createGame({ seed: m.seed, firstPlay: firstPlay, layout: layout });
+    ropeArmed = false;
+    $('btn-rope').classList.remove('armed');
     info = new Map();
     warning = null;
     paused = false;
@@ -80,7 +91,6 @@
     board.style.visibility = 'visible';
     $('tutorial').hidden = true;
     $('toast').hidden = true;
-    show('game');
     resize();
     setupMouse();
     updateHud();
@@ -159,6 +169,7 @@
     var r = game.toggleRope(item);
     if (r.ok) toast(t(r.roped ? 'toast.roped' : 'toast.unroped'));
     else if (r.reason === 'limit') toast(t('toast.ropeLimit'));
+    else if (r.reason === 'airborne') toast(t('toast.ropeAirborne'));
     updateHud();
   }
 
@@ -168,6 +179,21 @@
     if (!touchMode) touchMode = true;
     var tt = e.changedTouches[0];
     tap = { x: tt.clientX, y: tt.clientY, at: performance.now(), moved: false };
+    if (ropeArmed) {
+      suppressGrab = true;
+      disarmRope();
+      rope(eventWorldPoint(tap.x, tap.y));
+      return;
+    }
+    // long press without moving ties/unties (a plain tap never does)
+    clearTimeout(longPressTimer);
+    var pressed = tap;
+    longPressTimer = setTimeout(function () {
+      if (tap === pressed && !tap.moved) {
+        suppressGrab = true;
+        rope(eventWorldPoint(pressed.x, pressed.y));
+      }
+    }, LONG_PRESS_MS);
   }, { capture: true, passive: true });
   stage.addEventListener('touchmove', function (e) {
     if (!tap) return;
@@ -175,15 +201,29 @@
     if (Math.abs(tt.clientX - tap.x) + Math.abs(tt.clientY - tap.y) > TAP_MOVE) tap.moved = true;
   }, { capture: true, passive: true });
   stage.addEventListener('touchend', function () {
-    if (tap && !tap.moved && performance.now() - tap.at < TAP_MS) rope(eventWorldPoint(tap.x, tap.y));
+    clearTimeout(longPressTimer);
     tap = null;
     suppressGrab = false;
     if (liftActive) { liftActive = false; updateMouseTransform(); }
   }, { capture: true, passive: true });
-  stage.addEventListener('mousedown', function () {
+  stage.addEventListener('mousedown', function (e) {
     Sfx.unlock();
     if (touchMode && !tap) { touchMode = false; updateMouseTransform(); }
+    if (ropeArmed && !touchMode) {
+      suppressGrab = true;
+      disarmRope();
+      rope(eventWorldPoint(e.clientX, e.clientY));
+    }
   }, true);
+  function disarmRope() {
+    ropeArmed = false;
+    $('btn-rope').classList.remove('armed');
+  }
+  $('btn-rope').addEventListener('click', function () {
+    ropeArmed = !ropeArmed;
+    $('btn-rope').classList.toggle('armed', ropeArmed);
+    if (ropeArmed) toast(t('toast.ropeArmed'));
+  });
   window.addEventListener('mouseup', function () { suppressGrab = false; });
   board.addEventListener('dblclick', function (e) {
     if (touchMode) return;
@@ -208,7 +248,7 @@
     var ropes = $('hud-ropes');
     var left = game.ropesLeft;
     var html = '';
-    for (var i = 0; i < game.cfg.ropesPerPeriod; i++) {
+    for (var i = 0; i < game.cfg.ropesMax; i++) {
       html += '<svg class="' + (i < left ? '' : 'used') + '"><use href="#i-rope"/></svg>';
     }
     if (ropes.innerHTML !== html) ropes.innerHTML = html;
@@ -254,6 +294,7 @@
     Render.draw(ctx, board.width, board.height, {
       cfg: game.cfg,
       bounds: game.world.bounds,
+      doorRect: game.world.doorRect,
       snapshot: game.world.snapshot(),
       info: info,
       heldId: heldId,
@@ -307,9 +348,10 @@
   function onEnd(result) {
     lastResult = result;
     Store.set('tutorialDone', true);
-    var best = Store.get('best', null);
+    var key = Rules.bestKey(mode);
+    var best = Store.get(key, null);
     var isBest = best === null || result.bill.total > best;
-    if (isBest) Store.set('best', result.bill.total);
+    if (isBest) Store.set(key, result.bill.total);
     var got = Store.get('achievements', []);
     result.achievements.forEach(function (a) { if (got.indexOf(a) < 0) got.push(a); });
     Store.set('achievements', got);
@@ -327,7 +369,7 @@
       tb.appendChild(tr);
     });
     $('inv-reward').textContent = yen(result.bill.reward);
-    $('inv-damage').textContent = '-' + yen(result.bill.damage);
+    $('inv-damage').textContent = result.bill.damage ? '-' + yen(result.bill.damage) : yen(0);
     $('inv-total').textContent = yen(result.bill.total);
     $('inv-total').className = result.bill.total < 0 ? 'neg' : '';
     $('inv-best').hidden = !isBest;
@@ -345,6 +387,15 @@
     $('share-note').hidden = true;
     $('replay').hidden = true;
     show('result');
+    // build the share image now so the button can share synchronously
+    sharePrep = null;
+    var shareBtn = $('btn-share');
+    shareBtn.disabled = true;
+    Share.prepare(shareData(), shareText()).then(function (p) {
+      if (lastResult !== result) return;
+      sharePrep = p;
+      shareBtn.disabled = false;
+    });
   }
 
   function shareData() {
@@ -360,9 +411,15 @@
     };
   }
 
+  function shareText() {
+    return t('share.text', { stage: mode.daily ? 'No.' + mode.no : t('result.freeStage'), yen: yen(lastResult.bill.total) });
+  }
+
   $('btn-share').addEventListener('click', function () {
-    var text = t('share.text', { stage: mode.daily ? 'No.' + mode.no : t('result.freeStage'), yen: yen(lastResult.bill.total) });
-    Share.shareInvoice(shareData(), text).then(function (r) {
+    if (!sharePrep) return;
+    var r = Share.shareNow(sharePrep); // synchronous: navigator.share is called inside the gesture
+    if (r.promise) r.promise.catch(function () { /* cancelled */ });
+    (function () {
       if (r.how === 'downloaded') {
         var n = $('share-note');
         n.textContent = t('result.saved') + ' ';
@@ -374,7 +431,7 @@
         n.appendChild(a);
         n.hidden = false;
       }
-    });
+    })();
   });
   $('btn-retry').addEventListener('click', function () {
     start(mode.daily ? mode : { daily: false, seed: (Math.random() * 4294967296) >>> 0 });
@@ -411,7 +468,7 @@
       if (rem > 0 && rem <= game.cfg.warnLead * 1000) w = { dir: s.dir, remaining: rem };
     });
     Render.draw(rctx, rcv.width, rcv.height, {
-      cfg: game.cfg, bounds: game.world.bounds, snapshot: snap, info: info,
+      cfg: game.cfg, bounds: game.world.bounds, doorRect: game.world.doorRect, snapshot: snap, info: info,
       heldId: replay.t >= replay.focus.t - 40 && replay.t <= replay.focus.t + 600 ? replay.focus.id : null,
       time: snap.t, warning: w
     });
@@ -434,6 +491,6 @@
   renderTitle();
   requestAnimationFrame(loop);
 
-  // test hook for automated checks in the browser
-  window.__jh = { get game() { return game; }, get paused() { return paused; }, get mc() { return mc; }, tick: function (ms, n) { for (var i = 0; i < (n || 1); i++) frameStep(ms); }, start: start, pause: pause };
+  // test hook for automated checks, only with ?debug in the URL
+  if (DEBUG) window.__jh = { get game() { return game; }, get paused() { return paused; }, get mc() { return mc; }, tick: function (ms, n) { for (var i = 0; i < (n || 1); i++) frameStep(ms); }, start: start, pause: pause };
 })();

@@ -47,7 +47,7 @@
     return { x: (px - view.ox) / view.scale, y: (py - view.oy) / view.scale };
   }
 
-  function drawBuilding(ctx, cfg, bounds, doorClosed) {
+  function drawBuilding(ctx, cfg, bounds, doorClosed, doorRect) {
     var bay = cfg.bay;
     var room = cfg.room;
     // walls band
@@ -74,20 +74,24 @@
       ctx.fill();
     }
     ctx.restore();
-    // door
-    var divX = bay.x + bay.w;
-    var divW = room.x - divX;
+    // door (vertical divider: bay left of room; horizontal: bay above room)
+    var d = doorRect;
+    var vertical = d.h > d.w;
     if (doorClosed) {
       ctx.fillStyle = C.door;
-      ctx.fillRect(divX + 6, cfg.door.y, divW - 12, cfg.door.h);
-      ctx.fillStyle = 'rgba(0,0,0,0.25)';
-      ctx.fillRect(divX + 6, cfg.door.y + cfg.door.h / 2 - 3, divW - 12, 6);
+      if (vertical) ctx.fillRect(d.x + 6, d.y, d.w - 12, d.h);
+      else ctx.fillRect(d.x, d.y + 6, d.w, d.h - 12);
     } else {
       ctx.fillStyle = C.room;
-      ctx.fillRect(divX, cfg.door.y, divW, cfg.door.h);
+      ctx.fillRect(d.x, d.y, d.w, d.h);
       ctx.fillStyle = C.door;
-      ctx.fillRect(divX, cfg.door.y - 6, divW, 6);
-      ctx.fillRect(divX, cfg.door.y + cfg.door.h, divW, 6);
+      if (vertical) {
+        ctx.fillRect(d.x, d.y - 6, d.w, 6);
+        ctx.fillRect(d.x, d.y + d.h, d.w, 6);
+      } else {
+        ctx.fillRect(d.x - 6, d.y, 6, d.h);
+        ctx.fillRect(d.x + d.w, d.y, 6, d.h);
+      }
     }
     // edge lines
     ctx.strokeStyle = C.wallEdge;
@@ -229,7 +233,7 @@
   }
 
   /**
-   * state: { cfg, bounds, snapshot, info(Map id->info), heldId, time,
+   * state: { cfg, bounds, doorRect, snapshot, info(Map id->info), heldId, time,
    *          warning: {dir, remaining(ms)} | null }
    */
   function draw(ctx, canvasW, canvasH, state) {
@@ -239,7 +243,7 @@
     ctx.fillRect(0, 0, canvasW, canvasH);
     ctx.setTransform(view.scale, 0, 0, view.scale, view.ox, view.oy);
     var snap = state.snapshot;
-    drawBuilding(ctx, state.cfg, state.bounds, snap.door);
+    drawBuilding(ctx, state.cfg, state.bounds, snap.door, state.doorRect);
 
     snap.bodies.forEach(function (b) {
       var info = state.info.get(b[0]);

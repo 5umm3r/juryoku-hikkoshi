@@ -89,7 +89,7 @@ test('bill = reward for delivered unbroken items minus all damage', () => {
   assert.equal(bill.reward, 9000);
   assert.equal(bill.damage, 5200);
   assert.equal(bill.total, 3800);
-  assert.equal(bill.deliveredCount, 3);
+  assert.equal(bill.deliveredCount, 2, 'the broken bowl is not delivered');
 });
 
 test('achievements and landlord comments come from the log', () => {

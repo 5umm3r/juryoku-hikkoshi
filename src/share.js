@@ -65,7 +65,7 @@
     c.fillText(t('result.damage'), 110, y);
     c.textAlign = 'right';
     c.fillStyle = '#b3261e';
-    c.fillText('-' + yen(data.bill.damage), W - 110, y);
+    c.fillText(data.bill.damage ? '-' + yen(data.bill.damage) : yen(0), W - 110, y);
     y += 40;
     c.strokeStyle = '#16191c';
     c.lineWidth = 3;
@@ -132,27 +132,29 @@
     return 'https://x.com/intent/tweet?text=' + encodeURIComponent(text);
   }
 
-  /** Resolves to { how: 'shared' | 'downloaded' | 'cancelled', intentUrl? } */
-  async function shareInvoice(data, shareText) {
+  /**
+   * Build the image, Blob and File ahead of time (when the result screen opens),
+   * so the share button can call navigator.share synchronously: iOS Safari
+   * rejects share() that is not directly inside the user gesture.
+   */
+  async function prepare(data, shareText) {
     try { if (document.fonts && document.fonts.ready) await document.fonts.ready; } catch (e) { /* ignore */ }
     var cv = drawInvoice(data);
     var blob = await toBlob(cv);
     var file = null;
     try { file = new File([blob], 'juryoku-hikkoshi-invoice.png', { type: 'image/png' }); } catch (e) { file = null; }
-    if (file && navigator.canShare && navigator.share) {
-      var payload = { files: [file], text: shareText };
-      var ok = false;
-      try { ok = navigator.canShare(payload); } catch (e) { ok = false; }
-      if (ok) {
-        try {
-          await navigator.share(payload);
-          return { how: 'shared' };
-        } catch (e) {
-          if (e && e.name === 'AbortError') return { how: 'cancelled' };
-        }
-      }
+    var payload = file ? { files: [file], text: shareText } : null;
+    var canShareFiles = false;
+    try { canShareFiles = !!(payload && navigator.share && navigator.canShare && navigator.canShare(payload)); } catch (e) { canShareFiles = false; }
+    return { blob: blob, file: file, payload: payload, canShareFiles: canShareFiles, text: shareText, intentUrl: intentUrlFor(shareText) };
+  }
+
+  /** Call from the click handler with a prepared object; no awaits before share(). */
+  function shareNow(prep) {
+    if (prep.canShareFiles) {
+      return { how: 'share', promise: navigator.share(prep.payload) };
     }
-    var url = URL.createObjectURL(blob);
+    var url = URL.createObjectURL(prep.blob);
     var a = document.createElement('a');
     a.href = url;
     a.download = 'juryoku-hikkoshi-invoice.png';
@@ -160,11 +162,9 @@
     a.click();
     a.remove();
     setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
-    var intentUrl = intentUrlFor(shareText);
-    // may be blocked as a popup after the awaits above; the caller also shows a link
-    try { root.open(intentUrl, '_blank', 'noopener'); } catch (e) { /* ignore */ }
-    return { how: 'downloaded', intentUrl: intentUrl };
+    try { root.open(prep.intentUrl, '_blank', 'noopener'); } catch (e) { /* ignore */ }
+    return { how: 'downloaded', intentUrl: prep.intentUrl };
   }
 
-  root.Share = { drawInvoice: drawInvoice, shareInvoice: shareInvoice, intentUrlFor: intentUrlFor };
+  root.Share = { drawInvoice: drawInvoice, prepare: prepare, shareNow: shareNow, intentUrlFor: intentUrlFor };
 })(typeof self !== 'undefined' ? self : this);

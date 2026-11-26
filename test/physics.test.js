@@ -11,7 +11,7 @@ const BAY = { x: 0, y: 0, w: 240, h: 700 };
 const CONFIG = {
   bay: BAY,
   room: ROOM,
-  door: { y: 520, h: 180 },
+  door: { from: 520, size: 180 },
   wall: 200,
   substepMs: 1000 / 240,
   maxSpeed: 22,
@@ -19,8 +19,9 @@ const CONFIG = {
   cooldownMs: 500,
   rest: { speed: 0.15, angularSpeed: 0.01 },
   kinds: {
-    box: { w: 56, h: 50, density: 0.0006, threshold: 12, yenPerImpact: 60, cap: 1500, reward: 1200 },
-    fishbowl: { r: 22, density: 0.0012, threshold: 14, fragile: true, cap: 5000, reward: 3000 }
+    // thresholds are in relative-speed units (scaled by sqrt of the mass ratio)
+    box: { w: 56, h: 50, density: 0.0006, threshold: 7, yenPerImpact: 150, cap: 1500, reward: 1200 },
+    fishbowl: { r: 22, density: 0.0012, threshold: 7, fragile: true, cap: 5000, reward: 3000 }
   }
 };
 const FRAME = 1000 / 60;
@@ -131,7 +132,10 @@ test('fishbowl breaks when dropped from high up but survives a gentle set-down',
 });
 
 test('damage for one pair is counted at most once per 0.5 s', () => {
-  const world = Sim.createWorld(CONFIG);
+  // a box that can absorb many hits, so the cap does not hide the cooldown
+  const world = Sim.createWorld(Object.assign({}, CONFIG, {
+    kinds: { box: { w: 56, h: 50, density: 0.0006, threshold: 7, yenPerImpact: 1, cap: 1e9, reward: 1200 } }
+  }));
   const box = world.addFurniture('box', 600, 600);
   const hits = [];
   world.on((e) => { if (e.type === 'damage') hits.push(e.t); });

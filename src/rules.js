@@ -149,10 +149,10 @@
     var deliveredCount = 0;
     items.forEach(function (it) {
       damage += it.damage;
-      if (it.delivered) {
+      // broken items never count as delivered
+      if (it.delivered && !it.broken) {
         deliveredCount++;
-        var r = it.broken ? 0 : prices.reward[it.kind];
-        reward += r;
+        reward += prices.reward[it.kind];
       }
     });
     Object.keys(prices.reward).forEach(function (kind) {
@@ -202,7 +202,13 @@
     return out;
   }
 
+  /** localStorage key for the best bill: per daily stage number, or free play. */
+  function bestKey(mode) {
+    return mode.daily ? 'best.daily.' + mode.no : 'best.free';
+  }
+
   return {
+    bestKey: bestKey,
     DIRS: DIRS,
     DIR_VECTORS: DIR_VECTORS,
     createRng: createRng,
