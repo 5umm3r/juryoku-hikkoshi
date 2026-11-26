@@ -4,6 +4,8 @@ Browser physics game: move furniture into a room while gravity rotates.
 
 重力引越: 引っ越し業者として、トラックの荷台から部屋へ家具を運び込む。重力の向きは11秒目から8.5秒ごと（計6回）に上下左右へ変わる。仕様の「最初の10秒は重力を変えない」は初回プレイだけでなく全員共通にしている（日替わりの切替時刻を全員そろえるため）。初回プレイだけ、予告の意味の説明が出る。
 
+公開ページ: https://5umm3r.github.io/juryoku-hikkoshi/
+
 ## 遊び方
 
 `index.html` をブラウザで開く（ビルド不要、`file://` で動く。Matter.js 0.20.0 は `vendor/` に同梱）。
@@ -70,3 +72,7 @@ npm test   # = node --test test/*.test.js （依存パッケージなし）
 - 縦長と横長でワールドの配置が違うので、同じ「今日の現場」でも画面の向きが違えば物理の結果は一致しない（家具の順番と重力の列は同じ）
 - 日替わりの同一性は、同じブラウザ・同じ操作なら再現する程度。端末間で浮動小数点の結果が完全に一致する保証はない
 - 次段階の候補: 動画シェア（MediaRecorder）、45 度重力モード、家具の追加（本棚、観葉植物）
+
+## ライセンス
+
+MIT License（`LICENSE`）。同梱している Matter.js 0.20.0 も MIT License で、全文は `vendor/matter-LICENSE.txt`、まとめは `NOTICE` にある。

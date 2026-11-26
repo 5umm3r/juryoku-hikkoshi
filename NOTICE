@@ -1,0 +1,9 @@
+juryoku-hikkoshi
+Copyright (c) 2026 5umm3r. Licensed under the MIT License (see LICENSE).
+
+This project bundles third-party software:
+
+- matter-js 0.20.0 (vendor/matter.min.js)
+  Copyright (c) Liam Brummitt and contributors.
+  Licensed under the MIT License; the full text is in vendor/matter-LICENSE.txt.
+  https://github.com/liabru/matter-js

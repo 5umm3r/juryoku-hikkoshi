@@ -104,6 +104,12 @@
       c.fillText(a, x + 18, y);
       x += w + 16;
     });
+    // public URL in the bottom-right corner of the dark frame
+    c.textAlign = 'right';
+    c.textBaseline = 'alphabetic';
+    c.font = '400 26px ' + FONT;
+    c.fillStyle = '#9aa3aa';
+    c.fillText(root.I18n.t('app.url').replace(/^https:\/\//, ''), W - 64, H - 22);
     return cv;
   }
 
