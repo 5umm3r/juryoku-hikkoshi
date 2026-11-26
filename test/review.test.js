@@ -9,6 +9,9 @@ const Rules = require('../src/rules.js');
 
 const FRAME = 1000 / 60;
 const ROOM = { x: 280, y: 0, w: 700, h: 700 };
+const P_BAY = { x: 0, y: 0, w: 700, h: 240 };
+const P_ROOM = { x: 0, y: 280, w: 700, h: 700 };
+const P_DOOR = { from: 0, size: 180 };
 const BAY = { x: 0, y: 0, w: 240, h: 700 };
 
 function run(world, seconds) {
@@ -18,7 +21,7 @@ function run(world, seconds) {
 // ---------- strategies for the balance check ----------
 
 /** Drop a spawned item gently onto the room surface gravity points at. */
-function placeInRoom(game, item) {
+function placeInRoom(game, item, ROOM) {
   const w = game.world;
   const g = { down: [0, 1], up: [0, -1], left: [-1, 0], right: [1, 0] }[w.gravity];
   const others = w.items.filter((it) => it !== item).map((it) => it.body);
@@ -44,15 +47,16 @@ function placeInRoom(game, item) {
   return false;
 }
 
-function playStrategy(seed, strategy) {
-  const game = Sim.createGame({ seed });
+function playStrategy(seed, strategy, layout) {
+  const game = Sim.createGame({ seed, layout });
+  const room = layout === 'portrait' ? P_ROOM : ROOM;
   let guard = 0;
   while (!game.ended && guard++ < 10000) {
     const evs = game.advance(FRAME);
     if (strategy !== 'nothing') {
       evs.filter((e) => e.type === 'spawn').forEach((e) => {
         const it = game.world.items.find((x) => x.id === e.id);
-        placeInRoom(game, it);
+        placeInRoom(game, it, room);
       });
     }
     if (strategy === 'rope') {
@@ -69,14 +73,14 @@ function playStrategy(seed, strategy) {
 
 const SEEDS = [1, 2, 3, 20261127];
 
-test('balance: placing items right away (no rope) beats doing nothing on every seed', () => {
+for (const layout of ['landscape', 'portrait']) test(`balance (${layout}): placing items right away (no rope) beats doing nothing on every seed`, () => {
   const rows = SEEDS.map((seed) => ({
     seed,
-    nothing: playStrategy(seed, 'nothing').total,
-    place: playStrategy(seed, 'place').total,
-    rope: playStrategy(seed, 'rope').total
+    nothing: playStrategy(seed, 'nothing', layout).total,
+    place: playStrategy(seed, 'place', layout).total,
+    rope: playStrategy(seed, 'rope', layout).total
   }));
-  console.log('balance', JSON.stringify(rows));
+  console.log('balance ' + layout, JSON.stringify(rows));
   for (const r of rows) {
     assert.ok(r.place > r.nothing + 3000, `seed ${r.seed}: place ${r.place} vs nothing ${r.nothing}`);
     assert.ok(r.place > 0, `seed ${r.seed}: placing should earn money, got ${r.place}`);
@@ -181,9 +185,8 @@ test('portrait layout: bay above the room, world taller than wide, door between 
   const game = Sim.createGame({ seed: 4, layout: 'portrait' });
   const b = game.world.bounds;
   assert.ok(b.bottom - b.top > (b.right - b.left) * 1.2, JSON.stringify(b));
-  const { bay, room } = game.cfg;
-  assert.ok(bay.y + bay.h <= room.y, 'bay sits above the room');
-  assert.equal(room.w, room.h, 'room is square');
+  assert.deepEqual(b, { left: 0, right: 700, top: 0, bottom: 980 });
+  const bay = P_BAY;
   // a box dragged... simply: gravity down keeps the bay's items in the bay unless over the door
   while (game.world.time < 3000) game.advance(FRAME);
   const it = game.world.items[0];
@@ -195,7 +198,9 @@ test('portrait layout: bay above the room, world taller than wide, door between 
 
 test('portrait layout: an item moved over the door opening drops into the room', () => {
   const game = Sim.createGame({ seed: 4, layout: 'portrait' });
-  const { bay, room, door } = game.cfg;
+  const bay = P_BAY;
+  const room = P_ROOM;
+  const door = P_DOOR;
   const it = game.world.addFurniture('box', door.from + door.size / 2, bay.y + bay.h - 40);
   while (game.world.time < 3000) game.advance(FRAME);
   assert.ok(game.world.isInRoom(it), JSON.stringify(it.body.position));
@@ -217,9 +222,47 @@ test('portrait layout: the truck keeps unloading beside an item, never over the 
     game.advance(FRAME).forEach((e) => { if (e.type === 'spawn') spawns.push(e); });
   }
   assert.ok(spawns.length >= 1, 'truck dropped an item beside the fridge');
-  const { bay, door } = game.cfg;
+  const bay = P_BAY;
+  const door = P_DOOR;
   for (const it of game.world.items) {
     assert.ok(it.body.position.y < bay.y + bay.h, `item ${it.kind} stayed on the bay`);
     assert.ok(it.body.bounds.min.x > door.from + door.size || it.body.bounds.max.x < door.from, 'not dropped over the door');
+  }
+});
+
+test('portrait: Ceiling Piano comes from the room ceiling (the divider), not from the bay', () => {
+  // piano in the room, gravity up: it slams into the divider/door above the room (y 280)
+  const inRoom = Sim.createGame({ seed: 8, layout: 'portrait' });
+  inRoom.world.addFurniture('piano', 450, 930);
+  while (inRoom.world.time < 1000) inRoom.advance(FRAME);
+  inRoom.world.setGravity('up');
+  while (inRoom.world.time < 4000) inRoom.advance(FRAME);
+  assert.ok(inRoom.finish().achievements.includes('ach.ceilingPiano'), 'room ceiling hit counts');
+
+  // piano left on the truck bay (y 0..240) hitting the bay ceiling: not the room's ceiling
+  const inBay = Sim.createGame({ seed: 8, layout: 'portrait', config: { bag: { box: 1 } } });
+  inBay.world.addFurniture('piano', 450, 190);
+  while (inBay.world.time < 1000) inBay.advance(FRAME);
+  inBay.world.setGravity('up');
+  while (inBay.world.time < 4000) inBay.advance(FRAME);
+  assert.ok(!inBay.finish().achievements.includes('ach.ceilingPiano'), 'bay ceiling does not count');
+});
+
+test('share: navigator.share is called synchronously from shareNow (iOS user-gesture rule)', () => {
+  const calls = [];
+  const saved = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    value: { share: (p) => { calls.push(p); return Promise.resolve(); }, canShare: () => true }
+  });
+  try {
+    const Share = require('../src/share.js').Share || globalThis.Share;
+    const payload = { files: ['file'], text: 'No.27 請求額 ¥1,000' };
+    const r = Share.shareNow({ canShareFiles: true, payload, intentUrl: 'x' });
+    assert.equal(calls.length, 1, 'share() ran before shareNow returned');
+    assert.equal(calls[0], payload);
+    assert.equal(r.how, 'share');
+  } finally {
+    if (saved) Object.defineProperty(globalThis, 'navigator', saved);
   }
 });

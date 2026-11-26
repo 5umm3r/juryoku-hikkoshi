@@ -121,7 +121,6 @@
       mc.constraint.stiffness = game.cfg.kinds[item.kind].stiffness;
       mc.constraint.angularStiffness = 0;
       game.world.setHeld(item, mc.constraint);
-      if (touchMode) { liftActive = true; updateMouseTransform(); }
     });
     Matter.Events.on(mc, 'enddrag', function () { game.world.setHeld(null); });
     updateMouseTransform();
@@ -148,6 +147,8 @@
     updateMouseTransform();
   }
   window.addEventListener('resize', resize);
+  // the HUD can wrap to two rows and shrink the stage without a window resize
+  if (window.ResizeObserver) new ResizeObserver(function () { resize(); }).observe(stage);
 
   function eventWorldPoint(clientX, clientY) {
     var r = board.getBoundingClientRect();
@@ -198,7 +199,12 @@
   stage.addEventListener('touchmove', function (e) {
     if (!tap) return;
     var tt = e.changedTouches[0];
-    if (Math.abs(tt.clientX - tap.x) + Math.abs(tt.clientY - tap.y) > TAP_MOVE) tap.moved = true;
+    if (Math.abs(tt.clientX - tap.x) + Math.abs(tt.clientY - tap.y) > TAP_MOVE) {
+      tap.moved = true;
+      // lift the item above the finger only once the finger actually drags,
+      // so a long press keeps it on the floor (and tieable)
+      if (!liftActive && game && game.world.held) { liftActive = true; updateMouseTransform(); }
+    }
   }, { capture: true, passive: true });
   stage.addEventListener('touchend', function () {
     clearTimeout(longPressTimer);
@@ -395,6 +401,9 @@
       if (lastResult !== result) return;
       sharePrep = p;
       shareBtn.disabled = false;
+    }).catch(function () {
+      // leave the button usable: it will retry preparing on click
+      shareBtn.disabled = false;
     });
   }
 
@@ -416,7 +425,10 @@
   }
 
   $('btn-share').addEventListener('click', function () {
-    if (!sharePrep) return;
+    if (!sharePrep) {
+      Share.prepare(shareData(), shareText()).then(function (p) { sharePrep = p; toast(t('toast.shareReady')); });
+      return;
+    }
     var r = Share.shareNow(sharePrep); // synchronous: navigator.share is called inside the gesture
     if (r.promise) r.promise.catch(function () { /* cancelled */ });
     (function () {

@@ -376,7 +376,10 @@
           var ratio = otherItem ? otherItem.mass / item.mass : 1;
           ratio = Math.min(cfg.massRatioClamp[1], Math.max(cfg.massRatioClamp[0], ratio));
           var impact = rel * Math.sqrt(ratio);
-          if (other.label === 'wall:ceiling' && gravityDir === 'up' && rel > 3) {
+          // the room's ceiling: a wall touching the room's top edge (the outer
+          // ceiling in landscape, the bay divider or door in portrait)
+          if (gravityDir === 'up' && rel > 3 && other.label.indexOf('wall:') === 0 && !inBay(item) &&
+              item.body.bounds.min.y <= room.y + 8 && other.bounds.max.y <= room.y + 8) {
             emit({ type: 'ceiling', kind: item.kind, id: item.id, t: simTime });
           }
           registerImpact(item, impact, rel);
