@@ -128,7 +128,11 @@
     return new Promise(function (resolve) { cv.toBlob(resolve, 'image/png'); });
   }
 
-  /** Returns 'shared' | 'downloaded' | 'cancelled' */
+  function intentUrlFor(text) {
+    return 'https://x.com/intent/tweet?text=' + encodeURIComponent(text);
+  }
+
+  /** Resolves to { how: 'shared' | 'downloaded' | 'cancelled', intentUrl? } */
   async function shareInvoice(data, shareText) {
     try { if (document.fonts && document.fonts.ready) await document.fonts.ready; } catch (e) { /* ignore */ }
     var cv = drawInvoice(data);
@@ -142,9 +146,9 @@
       if (ok) {
         try {
           await navigator.share(payload);
-          return 'shared';
+          return { how: 'shared' };
         } catch (e) {
-          if (e && e.name === 'AbortError') return 'cancelled';
+          if (e && e.name === 'AbortError') return { how: 'cancelled' };
         }
       }
     }
@@ -156,9 +160,11 @@
     a.click();
     a.remove();
     setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
-    root.open('https://x.com/intent/tweet?text=' + encodeURIComponent(shareText), '_blank', 'noopener');
-    return 'downloaded';
+    var intentUrl = intentUrlFor(shareText);
+    // may be blocked as a popup after the awaits above; the caller also shows a link
+    try { root.open(intentUrl, '_blank', 'noopener'); } catch (e) { /* ignore */ }
+    return { how: 'downloaded', intentUrl: intentUrl };
   }
 
-  root.Share = { drawInvoice: drawInvoice, shareInvoice: shareInvoice };
+  root.Share = { drawInvoice: drawInvoice, shareInvoice: shareInvoice, intentUrlFor: intentUrlFor };
 })(typeof self !== 'undefined' ? self : this);

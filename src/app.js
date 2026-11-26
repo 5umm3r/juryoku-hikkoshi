@@ -28,6 +28,7 @@
   var lastTs = 0;
   var warning = null;
   var touchMode = false;
+  var liftActive = false; // touch: after grabbing, hold the item above the finger
   var suppressGrab = false;
   var tap = null;
   var toastTimer = 0;
@@ -37,6 +38,7 @@
 
   I18n.setLang('ja');
   I18n.apply(document);
+  document.title = t('app.title');
 
   function show(name) {
     Object.keys(screens).forEach(function (k) { screens[k].hidden = k !== name; });
@@ -57,7 +59,7 @@
     ALL_ACH.forEach(function (k) {
       var li = document.createElement('li');
       var has = got.indexOf(k) >= 0;
-      li.textContent = has ? t(k) : '???';
+      li.textContent = has ? t(k) : t('menu.lockedAch');
       if (has) li.className = 'got';
       ul.appendChild(li);
     });
@@ -109,6 +111,7 @@
       mc.constraint.stiffness = game.cfg.kinds[item.kind].stiffness;
       mc.constraint.angularStiffness = 0;
       game.world.setHeld(item, mc.constraint);
+      if (touchMode) { liftActive = true; updateMouseTransform(); }
     });
     Matter.Events.on(mc, 'enddrag', function () { game.world.setHeld(null); });
     updateMouseTransform();
@@ -117,9 +120,11 @@
   function updateMouseTransform() {
     if (!mouse || !view) return;
     var s = view.scale / dpr; // CSS px per world unit
-    var lift = touchMode ? TOUCH_LIFT : 0;
+    // hit-testing uses the real finger position; the lift only applies while
+    // dragging, capped below the release distance so it never drops the item
+    var liftWorld = touchMode && liftActive ? Math.min(TOUCH_LIFT / s, game ? game.cfg.maxStretch * 0.6 : 50) : 0;
     Matter.Mouse.setScale(mouse, { x: 1 / s, y: 1 / s });
-    Matter.Mouse.setOffset(mouse, { x: -view.ox / dpr / s, y: (-view.oy / dpr - lift) / s });
+    Matter.Mouse.setOffset(mouse, { x: -view.ox / dpr / s, y: -view.oy / dpr / s - liftWorld });
   }
 
   function resize() {
@@ -160,7 +165,7 @@
   // capture on the stage so it runs before Matter's listeners on the canvas
   stage.addEventListener('touchstart', function (e) {
     Sfx.unlock();
-    if (!touchMode) { touchMode = true; updateMouseTransform(); }
+    if (!touchMode) touchMode = true;
     var tt = e.changedTouches[0];
     tap = { x: tt.clientX, y: tt.clientY, at: performance.now(), moved: false };
   }, { capture: true, passive: true });
@@ -173,6 +178,7 @@
     if (tap && !tap.moved && performance.now() - tap.at < TAP_MS) rope(eventWorldPoint(tap.x, tap.y));
     tap = null;
     suppressGrab = false;
+    if (liftActive) { liftActive = false; updateMouseTransform(); }
   }, { capture: true, passive: true });
   stage.addEventListener('mousedown', function () {
     Sfx.unlock();
@@ -356,10 +362,16 @@
 
   $('btn-share').addEventListener('click', function () {
     var text = t('share.text', { stage: mode.daily ? 'No.' + mode.no : t('result.freeStage'), yen: yen(lastResult.bill.total) });
-    Share.shareInvoice(shareData(), text).then(function (how) {
-      if (how === 'downloaded') {
+    Share.shareInvoice(shareData(), text).then(function (r) {
+      if (r.how === 'downloaded') {
         var n = $('share-note');
-        n.textContent = t('result.saved');
+        n.textContent = t('result.saved') + ' ';
+        var a = document.createElement('a');
+        a.href = r.intentUrl;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.textContent = t('result.postLink');
+        n.appendChild(a);
         n.hidden = false;
       }
     });

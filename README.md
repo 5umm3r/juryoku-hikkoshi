@@ -2,7 +2,7 @@
 
 Browser physics game: move furniture into a room while gravity rotates.
 
-重力引越: 引っ越し業者として、トラックの荷台から部屋へ家具を運び込む。重力の向きは約9秒ごとに上下左右へ変わる。
+重力引越: 引っ越し業者として、トラックの荷台から部屋へ家具を運び込む。重力の向きは11秒目から8.5秒ごと（計6回）に上下左右へ変わる。最初の10秒は全員切替なしで、初回プレイだけ予告の説明が出る。
 
 ## 遊び方
 
@@ -40,6 +40,8 @@ Browser physics game: move furniture into a room while gravity rotates.
 | `src/audio.js` | WebAudio で合成した衝突音・割れる音・予告音 |
 | `src/i18n.js` | 英語キーと日本語辞書（デフォルトは ja） |
 | `src/storage.js` | localStorage（すべて try/catch）: 最高額、実績、チュートリアル済み |
+
+`window.__jh` は自動検証用のフック（`tick(ms, n)` で手動フレーム送り、`game` で状態参照）。ゲームの挙動には影響しない。
 
 ## テスト
 

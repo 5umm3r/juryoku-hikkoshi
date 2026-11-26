@@ -26,7 +26,7 @@ test('same seed: same furniture order and gravity schedule; consecutive switches
 });
 
 test('a full 60 s stage switches gravity at about 9 s intervals with a 3 s warning', () => {
-  const game = Sim.createGame({ seed: 5 });
+  const game = Sim.createGame({ seed: 5, config: { duration: 60, interval: 9, firstAt: 9, warnLead: 3 } });
   const warns = [];
   const switches = [];
   const ends = [];
@@ -44,11 +44,28 @@ test('a full 60 s stage switches gravity at about 9 s intervals with a 3 s warni
   assert.ok(game.frames.length > 1700, 'recorded about 30 frames per second');
 });
 
-test('first play: no gravity switch in the first 10 seconds and the first warning is marked tutorial', () => {
+test('default stage: no gravity switch in the first 10 s, about 6 switches, same for first-timers', () => {
+  const veteran = Sim.createGame({ seed: 5 });
+  const firstTimer = Sim.createGame({ seed: 5, firstPlay: true });
+  assert.deepEqual(firstTimer.schedule.map((s) => [s.at, s.dir]), veteran.schedule.map((s) => [s.at, s.dir]));
+  const evs = playOut(veteran);
+  const switchTimes = [];
+  // (re-run to observe times)
+  const g2 = Sim.createGame({ seed: 5 });
+  playOut(g2, (e, g) => { if (e.type === 'switch') switchTimes.push(g.world.time); });
+  assert.ok(switchTimes[0] >= 10000, `first switch at ${switchTimes[0]}`);
+  assert.ok(switchTimes.length >= 5 && switchTimes.length <= 7, `${switchTimes.length} switches`);
+  for (let i = 1; i < switchTimes.length; i++) {
+    const gap = switchTimes[i] - switchTimes[i - 1];
+    assert.ok(gap >= 8000 && gap <= 10000, `gap ${gap}`);
+  }
+  assert.ok(evs.every((e) => e.type !== 'warn' || !e.tutorial), 'no tutorial flag for veterans');
+});
+
+test('first play: the first warning is marked tutorial', () => {
   const game = Sim.createGame({ seed: 5, firstPlay: true });
   const evs = playOut(game);
   const first = evs.find((e) => e.type === 'switch');
-  assert.ok(game.schedule[0].at >= 10000);
   const warn = evs.find((e) => e.type === 'warn');
   assert.equal(warn.tutorial, true);
   assert.equal(evs.filter((e) => e.type === 'warn' && e.tutorial).length, 1);

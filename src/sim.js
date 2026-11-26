@@ -35,9 +35,10 @@
     maxStretch: 90,
     gravityScale: 0.0008,
     duration: 60,
-    interval: 9,
-    firstAt: 9,
-    tutorialFirstAt: 13,
+    // 11 s, then every 8.5 s: 6 switches, and nobody sees a switch in the
+    // first 10 s, so daily stages are identical for first-timers and veterans
+    interval: 8.5,
+    firstAt: 11,
     warnLead: 3,
     bag: { box: 6, fridge: 3, piano: 2, fishbowl: 3 },
     bayCapacity: 2,
@@ -309,7 +310,7 @@
         var dy = p.y - prev.y;
         var d = Math.sqrt(dx * dx + dy * dy);
         if (d > maxStep) {
-          Body.setPosition(it.body, { x: prev.x + dx / d * maxStep, y: prev.y + dy / d * maxStep }, true);
+          Body.setPosition(it.body, { x: prev.x + dx / d * maxStep, y: prev.y + dy / d * maxStep }, false);
         }
       }
     });
@@ -446,7 +447,7 @@
     var cfg = world.cfg;
     var rng = Rules.createRng(opts.seed);
     var order = Rules.furnitureOrder(rng, cfg.bag).slice(0, cfg.maxBodies);
-    var times = Rules.switchTimes({ duration: cfg.duration, interval: cfg.interval, firstAt: opts.firstPlay ? cfg.tutorialFirstAt : cfg.firstAt });
+    var times = Rules.switchTimes({ duration: cfg.duration, interval: cfg.interval, firstAt: cfg.firstAt });
     var dirs = Rules.gravitySequence(rng, times.length, 'down');
     var schedule = times.map(function (t, i) { return { at: t * 1000, dir: dirs[i], warned: false, done: false }; });
     var queue = order.slice();

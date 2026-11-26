@@ -105,6 +105,7 @@ body { overscroll-behavior: none; }
 .invoice .ach-list li { color: var(--ink); border-color: var(--ink); }
 .result-actions { display: flex; flex-direction: column; gap: 10px; }
 .share-note { grid-column: 1 / -1; color: var(--muted); font-size: 14px; margin: 0; }
+.share-note a { color: var(--accent); }
 .replay { position: absolute; inset: 0; background: var(--bg); display: flex; flex-direction: column; }
 .replay[hidden] { display: none; }
 .replay-bar { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--line); }
