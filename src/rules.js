@@ -208,6 +208,25 @@
     return out;
   }
 
+  /**
+   * Holds a displayed value until a new one has stayed the same for holdMs,
+   * so an item rocking at the edge of "at rest" does not make the HUD flicker.
+   */
+  function createSteady(holdMs) {
+    var shown;
+    var started = false;
+    var pending;
+    var since = 0;
+    return {
+      update: function (value, now) {
+        if (!started) { started = true; shown = value; pending = value; since = now; return shown; }
+        if (value !== pending) { pending = value; since = now; }
+        if (pending !== shown && now - since >= holdMs) shown = pending;
+        return shown;
+      }
+    };
+  }
+
   /** localStorage key for the best bill: per daily stage number, or free play. */
   function bestKey(mode) {
     return mode.daily ? 'best.daily.' + mode.no : 'best.free';
@@ -215,6 +234,7 @@
 
   return {
     bestKey: bestKey,
+    createSteady: createSteady,
     DIRS: DIRS,
     DIR_VECTORS: DIR_VECTORS,
     createRng: createRng,

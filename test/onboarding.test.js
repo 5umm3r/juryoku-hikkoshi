@@ -186,3 +186,14 @@ test('replay (no guide in state) draws no guide text; the warning names the new 
   assert.ok(texts.includes('GRAVITY-UP'));
   assert.ok(texts.includes('3'));
 });
+
+test('HUD value holder ignores a value that flips back within the hold time', () => {
+  const s = Rules.createSteady(300);
+  assert.equal(s.update('A', 0), 'A');
+  // an item rocking in and out of rest every 100 ms never changes the display
+  for (let t = 100; t <= 1000; t += 100) assert.equal(s.update(t % 200 ? 'B' : 'A', t), 'A');
+  // a change that holds for 300 ms shows
+  assert.equal(s.update('B', 1100), 'A');
+  assert.equal(s.update('B', 1300), 'A');
+  assert.equal(s.update('B', 1400), 'B');
+});

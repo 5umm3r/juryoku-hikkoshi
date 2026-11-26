@@ -94,6 +94,7 @@
     $('callout').hidden = true;
     guide = { grabbed: false, delivered: false, ropeHintId: null, ropeHintUntil: 0, firstWarn: true };
     lastDamage = 0;
+    hudSteady = Rules.createSteady(300);
     $('toast').hidden = true;
     resize();
     setupMouse();
@@ -268,22 +269,24 @@
   }
 
   var lastDamage = 0;
+  var hudSteady = Rules.createSteady(300);
   var hitTimer = 0;
   function updateHud() {
     if (!game) return;
     $('hud-time').textContent = (game.timeLeft / 1000).toFixed(1);
     var est = game.estimate();
-    $('hud-delivered').textContent = est.deliveredCount + '/' + est.itemCount;
+    var shown = hudSteady.update(est.deliveredCount + '|' + est.itemCount + '|' + est.total, game.world.time).split('|');
+    $('hud-delivered').textContent = shown[0] + '/' + shown[1];
     var ev = $('hud-estimate');
-    ev.textContent = yen(est.total);
-    ev.classList.toggle('neg', est.total < 0);
+    ev.textContent = yen(Number(shown[2]));
+    ev.classList.toggle('neg', Number(shown[2]) < 0);
     if (est.damage > lastDamage) {
       ev.classList.add('hit');
       clearTimeout(hitTimer);
       hitTimer = setTimeout(function () { ev.classList.remove('hit'); }, 500);
     }
     lastDamage = est.damage;
-    updateGuide(est);
+    updateGuide({ deliveredCount: Number(shown[0]) });
     $('hud-ropes').textContent = String(game.ropesLeft);
   }
 
