@@ -151,6 +151,30 @@
     board.setAttribute('data-pixel-ratio', String(dpr));
     if (game) view = Render.computeView(board.width, board.height, game.world.bounds);
     updateMouseTransform();
+    placeCallout();
+  }
+
+  /**
+   * Landscape: the strip above the canvas is too thin, so the callout goes inside
+   * the room, below the room label and left of the gravity arrow, where it covers
+   * neither the bay label nor the items resting on the floor. Portrait keeps the
+   * stylesheet position (the empty band above the building).
+   */
+  function placeCallout() {
+    var el = $('callout');
+    if (!game || !view || game.layout !== 'landscape') {
+      el.style.left = el.style.top = el.style.width = el.style.right = el.style.maxWidth = '';
+      return;
+    }
+    var room = game.cfg.room;
+    var s = view.scale / dpr; // CSS px per world unit
+    var left = (room.x + 16) * s + view.ox / dpr;
+    var right = (room.x + room.w - 90) * s + view.ox / dpr;
+    el.style.left = Math.round(left) + 'px';
+    el.style.top = Math.round((room.y + 60) * s + view.oy / dpr) + 'px';
+    el.style.width = Math.max(120, Math.round(right - left)) + 'px';
+    el.style.right = 'auto';
+    el.style.maxWidth = 'none';
   }
   window.addEventListener('resize', resize);
   // the HUD can wrap to two rows and shrink the stage without a window resize
