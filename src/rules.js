@@ -147,8 +147,13 @@
     var reward = 0;
     var damage = 0;
     var deliveredCount = 0;
+    // why the rest did not count: still on the truck, outside the room,
+    // still moving in the room, or broken
+    var missed = { truck: 0, outside: 0, moving: 0, broken: 0 };
     items.forEach(function (it) {
       damage += it.damage;
+      if (it.broken) missed.broken++;
+      else if (!it.delivered && missed[it.status] !== undefined) missed[it.status]++;
       // broken items never count as delivered
       if (it.delivered && !it.broken) {
         deliveredCount++;
@@ -168,6 +173,7 @@
       total: reward - damage,
       deliveredCount: deliveredCount,
       itemCount: items.length,
+      missed: missed,
       lines: lines
     };
   }

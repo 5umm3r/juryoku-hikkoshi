@@ -232,9 +232,106 @@
     ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
   }
 
+  var LABEL_FONT = '700 30px system-ui, sans-serif';
+  var GUIDE_FONT = '800 34px system-ui, sans-serif';
+
+  /** Text on a solid plate so it reads over any background. */
+  function plateText(ctx, text, x, y, font, fg, bg) {
+    ctx.font = font;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    var w = ctx.measureText(text).width + 24;
+    var h = Number((font.match(/(\d+)px/) || [0, 30])[1]) + 16;
+    ctx.fillStyle = bg;
+    ctx.fillRect(x - w / 2, y - h / 2, w, h);
+    ctx.fillStyle = fg;
+    ctx.fillText(text, x, y);
+  }
+
+  /** Names of the three areas: truck bay, door, room. */
+  function drawAreaLabels(ctx, cfg, doorRect, labels) {
+    var bay = cfg.bay;
+    var room = cfg.room;
+    ctx.font = LABEL_FONT;
+    ctx.textBaseline = 'top';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(242, 178, 51, 0.9)';
+    ctx.fillText(labels.bay, bay.x + 18, bay.y + 22);
+    ctx.fillStyle = 'rgba(30, 34, 38, 0.6)';
+    ctx.fillText(labels.room, room.x + 18, room.y + 16);
+    var d = doorRect;
+    ctx.save();
+    ctx.translate(d.x + d.w / 2, d.y + d.h / 2);
+    if (d.h > d.w) ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#1e2226';
+    ctx.font = '700 28px system-ui, sans-serif';
+    ctx.fillText(labels.door, 0, 0);
+    ctx.restore();
+  }
+
+  /** Route bay -> door -> room, and a pulsing frame on the room. */
+  function drawGoal(ctx, cfg, doorRect, text, time) {
+    var bay = cfg.bay;
+    var room = cfg.room;
+    var d = doorRect;
+    var vertical = d.h > d.w;
+    var pulse = 0.5 + 0.5 * Math.sin(time / 220);
+    ctx.strokeStyle = 'rgba(' + C.warn + ',' + (0.45 + 0.5 * pulse).toFixed(3) + ')';
+    ctx.lineWidth = 10;
+    ctx.strokeRect(room.x + 5, room.y + 5, room.w - 10, room.h - 10);
+    var dc = { x: d.x + d.w / 2, y: d.y + d.h / 2 };
+    var a = vertical ? { x: bay.x + bay.w / 2, y: dc.y } : { x: dc.x, y: bay.y + bay.h / 2 };
+    var b = vertical ? { x: room.x + 150, y: dc.y } : { x: dc.x, y: room.y + 150 };
+    var c = { x: room.x + room.w / 2, y: room.y + room.h / 2 + 60 };
+    ctx.strokeStyle = 'rgba(' + C.warn + ',0.9)';
+    ctx.lineWidth = 8;
+    ctx.setLineDash([22, 14]);
+    ctx.lineDashOffset = -time / 30;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(c.x, c.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.lineDashOffset = 0;
+    var ang = Math.atan2(c.y - b.y, c.x - b.x);
+    ctx.save();
+    ctx.translate(c.x, c.y);
+    ctx.rotate(ang);
+    ctx.fillStyle = 'rgba(' + C.warn + ',0.95)';
+    ctx.beginPath(); ctx.moveTo(18, 0); ctx.lineTo(-18, -20); ctx.lineTo(-18, 20); ctx.closePath(); ctx.fill();
+    ctx.restore();
+    // label just past the arrowhead, away from the incoming path
+    plateText(ctx, text, c.x + Math.cos(ang) * 110, c.y + Math.sin(ang) * 80, GUIDE_FONT, '#ffffff', 'rgba(' + C.warn + ',0.95)');
+  }
+
+  /** Hand pointing at an item, with "drag this". */
+  function drawDragHint(ctx, x, y, text, time) {
+    var bob = Math.sin(time / 180) * 8;
+    var r = 46 + 10 * Math.abs(Math.sin(time / 300));
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+    // hand: index finger pointing up-left at the item, palm below-right
+    ctx.save();
+    ctx.translate(x + 22, y + 26 + bob);
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = '#1e2226';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(-6, -36); ctx.lineTo(6, -36); ctx.lineTo(6, -6);
+    ctx.lineTo(30, -6); ctx.lineTo(30, 28); ctx.lineTo(-10, 28); ctx.lineTo(-20, 4);
+    ctx.lineTo(-6, -2); ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.restore();
+    plateText(ctx, text, x, y - r - 34, GUIDE_FONT, '#16191c', '#ffffff');
+  }
+
   /**
    * state: { cfg, bounds, doorRect, snapshot, info(Map id->info), heldId, time,
-   *          warning: {dir, remaining(ms)} | null }
+   *          warning: {dir, remaining(ms), label?} | null,
+   *          labels?: {bay, room, door},           // live play only
+   *          guide?: {goal, goalText, dragId, dragText, ringId} } // live play only
    */
   function draw(ctx, canvasW, canvasH, state) {
     var view = computeView(canvasW, canvasH, state.bounds);
@@ -244,12 +341,28 @@
     ctx.setTransform(view.scale, 0, 0, view.scale, view.ox, view.oy);
     var snap = state.snapshot;
     drawBuilding(ctx, state.cfg, state.bounds, snap.door, state.doorRect);
+    if (state.labels) drawAreaLabels(ctx, state.cfg, state.doorRect, state.labels);
+    var guide = state.guide;
+    if (guide && guide.goal) drawGoal(ctx, state.cfg, state.doorRect, guide.goalText, state.time);
 
     snap.bodies.forEach(function (b) {
       var info = state.info.get(b[0]);
       if (!info) return;
       drawItem(ctx, info, b[1], b[2], b[3], !!b[4], !!b[5], state.heldId === b[0], state.time);
     });
+
+    if (guide && (guide.dragId || guide.ringId)) {
+      snap.bodies.forEach(function (b) {
+        if (b[0] === guide.dragId) drawDragHint(ctx, b[1], b[2], guide.dragText, state.time);
+        if (b[0] === guide.ringId) {
+          ctx.strokeStyle = 'rgba(' + C.warn + ',0.95)';
+          ctx.lineWidth = 6;
+          ctx.setLineDash([12, 8]);
+          ctx.beginPath(); ctx.arc(b[1], b[2], 95, 0, Math.PI * 2); ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      });
+    }
 
     var whole = { x: state.bounds.left, y: state.bounds.top, w: state.bounds.right - state.bounds.left, h: state.bounds.bottom - state.bounds.top };
     if (state.warning) {
@@ -265,6 +378,10 @@
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(String(Math.max(1, Math.ceil(rem / 1000))), cx, cy);
+      if (state.warning.label) {
+        var ly = state.warning.dir === 'down' ? cy - 200 : cy + 200;
+        plateText(ctx, state.warning.label, cx, ly, '800 52px system-ui, sans-serif', '#ffffff', 'rgba(22, 25, 28, 0.85)');
+      }
     }
     // current gravity indicator, top-right corner of the room
     var r = state.cfg.room;

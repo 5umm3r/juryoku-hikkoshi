@@ -594,18 +594,8 @@
       if (result) return result;
       ended = true;
       world.setHeld(null);
-      var itemResults = world.items.map(function (it) {
-        return {
-          id: it.id,
-          kind: it.kind,
-          delivered: world.isInRoom(it) && world.isResting(it),
-          broken: it.broken,
-          damage: it.damage
-        };
-      });
-      // furniture still on the truck counts as not delivered
-      queue.forEach(function (kind) { itemResults.push({ id: 0, kind: kind, delivered: false, broken: false, damage: 0 }); });
-      var bill = Rules.computeBill(itemResults, { reward: mapKinds(function (k) { return cfg.kinds[k].reward; }) });
+      var itemResults = currentItems();
+      var bill = billFor(itemResults);
       var worst = null;
       log.forEach(function (e) { if (e.type === 'damage' && (!worst || e.yen > worst.yen)) worst = e; });
       result = {
@@ -619,6 +609,32 @@
       };
       pending.push({ type: 'end', result: result });
       return result;
+    }
+
+    /**
+     * Where each item stands right now. The final bill and the live estimate
+     * both use this, so the HUD shows what time-up would pay.
+     * status: delivered | moving (in the room, not at rest) | outside | truck | broken
+     */
+    function itemStatus(it) {
+      if (it.broken) return 'broken';
+      if (world.isInRoom(it)) return world.isResting(it) ? 'delivered' : 'moving';
+      if (world.isInRoom(it, cfg.bay) || isOverlappingBay(it)) return 'truck';
+      return 'outside';
+    }
+
+    function currentItems() {
+      var list = world.items.map(function (it) {
+        var status = itemStatus(it);
+        return { id: it.id, kind: it.kind, status: status, delivered: status === 'delivered', broken: it.broken, damage: it.damage };
+      });
+      // furniture still on the truck counts as not delivered
+      queue.forEach(function (kind) { list.push({ id: 0, kind: kind, status: 'truck', delivered: false, broken: false, damage: 0 }); });
+      return list;
+    }
+
+    function billFor(itemResults) {
+      return Rules.computeBill(itemResults, { reward: mapKinds(function (k) { return cfg.kinds[k].reward; }) });
     }
 
     function mapKinds(fn) {
@@ -683,6 +699,9 @@
       advance: advance,
       finish: finish,
       toggleRope: toggleRope,
+      /** The bill if time ran out now. */
+      estimate: function () { return billFor(currentItems()); },
+      itemStatus: itemStatus,
       get ropesLeft() { return cfg.ropesMax - ropedCount(); },
       layout: opts.layout || 'landscape',
       get timeLeft() { return Math.max(0, cfg.duration * 1000 - world.time); },
