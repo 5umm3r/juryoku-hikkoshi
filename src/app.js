@@ -258,27 +258,136 @@
     return hit.length ? game.world.itemForBody(hit[0]) : null;
   }
 
+  /** What the rope rules need to know about an item right now. */
+  function ropeState(it) {
+    var status = marks && marks.status ? marks.status.get(it.id) : null;
+    return {
+      held: game.world.held === it,
+      roped: it.roped,
+      inRoom: game.world.isInRoom(it),
+      resting: status ? status === 'delivered' : game.world.isResting(it),
+      touching: game.world.touchesWall(it),
+      ropesLeft: game.ropesLeft
+    };
+  }
+
   function rope(p) {
     if (!game || game.ended || paused) return;
     var item = itemAt(p);
-    if (!item) return;
+    if (item) ropeItem(item);
+  }
+
+  /** Tie or untie one item; when it cannot be tied, say why next to it. */
+  function ropeItem(item) {
+    if (!game || game.ended || paused || briefing) return;
+    if (!item.roped) {
+      var reason = Rules.ropeBlockReason(ropeState(item));
+      if (reason) { showNote(item, t(reason)); return; }
+    }
     if (mc && mc.constraint.bodyB) { mc.constraint.bodyB = null; mc.body = null; }
     game.world.setHeld(null);
     var r = game.toggleRope(item);
     if (r.ok && r.roped) {
       Store.set('ropeUsed', true);
-      addPop(item, t('pop.roped'), 'rope', 2600);
+      // what a rope does, shown at the item the first time in each game
+      if (guide && !guide.ropePopShown) { guide.ropePopShown = true; addPop(item, t('pop.roped'), 'rope', 2600); }
       if (guide) guide.ropeHintId = null;
       hideCallout();
     }
-    if (r.ok) toast(t(r.roped ? 'toast.roped' : 'toast.unroped'));
-    else if (r.reason === 'limit') toast(t('toast.ropeLimit'));
-    else if (r.reason === 'airborne') toast(t('toast.ropeAirborne'));
+    if (!r.ok) showNote(item, t(r.reason === 'limit' ? 'reason.limit' : 'reason.touch'));
     updateHud();
+    updateRopeButtons();
   }
 
+  var noteTimer = 0;
+  function showNote(item, text) {
+    var layer = $('rope-layer');
+    var old = layer.querySelector('.item-note');
+    if (old) old.remove();
+    var el = document.createElement('div');
+    el.className = 'item-note';
+    el.textContent = text;
+    var pt = cssPoint(item.body.position.x, item.body.bounds.min.y);
+    el.style.left = Math.round(Math.min(Math.max(pt.x, 110), stage.clientWidth - 110)) + 'px';
+    el.style.top = Math.round(Math.max(pt.y - 8, 40)) + 'px';
+    layer.appendChild(el);
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(function () { el.remove(); }, 1800);
+  }
+
+  function cssPoint(wx, wy) {
+    var s = view.scale / dpr;
+    return { x: wx * s + view.ox / dpr, y: wy * s + view.oy / dpr };
+  }
+
+  /**
+   * On-screen rope buttons: "tie" above each item at rest in the room against a
+   * floor or wall, "untie" above tied items. Buttons that would overlap an
+   * earlier one are skipped so a pile of furniture does not become a pile of buttons.
+   */
+  var ropeButtons = new Map();
+  function updateRopeButtons() {
+    var layer = $('rope-layer');
+    var live = !!(game && view && !briefing && !game.ended && !screens.game.hidden);
+    var seen = {};
+    var placed = [];
+    if (live) {
+      var now = game.world.time;
+      game.world.items.forEach(function (it) {
+        var action = Rules.ropeAction(ropeState(it));
+        if (!action) return;
+        var b = it.body.bounds;
+        var cx = (b.min.x + b.max.x) / 2;
+        var top = cssPoint(cx, b.min.y);
+        // the open side of a resting item is away from gravity
+        var below = game.world.gravity === 'up' || top.y - 50 < 0;
+        var y = below ? cssPoint(cx, b.max.y).y + 6 : top.y - 6;
+        var rect = { l: top.x - 45, r: top.x + 45, t: below ? y : y - 46, b: below ? y + 46 : y };
+        if (placed.some(function (q) { return rect.l < q.r && rect.r > q.l && rect.t < q.b && rect.b > q.t; })) return;
+        placed.push(rect);
+        seen[it.id] = true;
+        var el = ropeButtons.get(it.id);
+        if (!el) {
+          el = document.createElement('button');
+          el.type = 'button';
+          el.className = 'tie-btn';
+          el.addEventListener('click', function (e) { e.stopPropagation(); var x = game && game.world.items.find(function (q) { return q.id === it.id; }); if (x) ropeItem(x); });
+          layer.appendChild(el);
+          ropeButtons.set(it.id, el);
+        }
+        if (el.dataset.action !== action) {
+          el.dataset.action = action;
+          el.innerHTML = '<svg><use href="#' + (action === 'tie' ? 'i-lock' : 'i-unlock') + '"/></svg><span></span>';
+          el.querySelector('span').textContent = t(action === 'tie' ? 'rope.tie' : 'rope.untie');
+        }
+        el.classList.toggle('below', below);
+        el.classList.toggle('empty', action === 'tie' && game.ropesLeft <= 0);
+        var pulse = action === 'tie' && ((practice && practice.step === 'rope') ||
+          (guide && guide.ropeHintId === it.id && now < guide.ropeHintUntil));
+        el.classList.toggle('pulse', !!pulse);
+        el.style.left = Math.round(top.x) + 'px';
+        el.style.top = Math.round(y) + 'px';
+      });
+    }
+    ropeButtons.forEach(function (el, id) {
+      if (!seen[id]) { el.remove(); ropeButtons.delete(id); }
+    });
+  }
+
+  /** A plain tap on an item that has no button explains what it would take. */
+  function explainTap(clientX, clientY) {
+    if (!game || game.ended || paused || briefing) return;
+    var item = itemAt(eventWorldPoint(clientX, clientY));
+    if (!item || Rules.ropeAction(ropeState(item))) return;
+    var reason = Rules.ropeBlockReason(ropeState(item));
+    if (reason) showNote(item, t(reason));
+  }
+  var mouseTap = null;
+
   // capture on the stage so it runs before Matter's listeners on the canvas
+  function onRopeButton(e) { return e.target && e.target.closest && e.target.closest('.tie-btn'); }
   stage.addEventListener('touchstart', function (e) {
+    if (onRopeButton(e)) return;
     Sfx.unlock();
     if (!touchMode) touchMode = true;
     var tt = e.changedTouches[0];
@@ -309,14 +418,17 @@
       if (!liftActive && game && game.world.held) { liftActive = true; updateMouseTransform(); }
     }
   }, { capture: true, passive: true });
-  stage.addEventListener('touchend', function () {
+  stage.addEventListener('touchend', function (e) {
     clearTimeout(longPressTimer);
+    if (tap && !tap.moved && !suppressGrab && performance.now() - tap.at < 350 && !onRopeButton(e)) explainTap(tap.x, tap.y);
     tap = null;
     suppressGrab = false;
     if (liftActive) { liftActive = false; updateMouseTransform(); }
   }, { capture: true, passive: true });
   stage.addEventListener('mousedown', function (e) {
+    if (onRopeButton(e)) return;
     Sfx.unlock();
+    mouseTap = touchMode ? null : { x: e.clientX, y: e.clientY, at: performance.now() };
     if (touchMode && !tap) { touchMode = false; updateMouseTransform(); }
     if (ropeArmed && !touchMode) {
       suppressGrab = true;
@@ -331,9 +443,13 @@
   $('btn-rope').addEventListener('click', function () {
     ropeArmed = !ropeArmed;
     $('btn-rope').classList.toggle('armed', ropeArmed);
-    if (ropeArmed) toast(t('toast.ropeArmed'));
   });
-  window.addEventListener('mouseup', function () { suppressGrab = false; });
+  window.addEventListener('mouseup', function (e) {
+    var m = mouseTap;
+    mouseTap = null;
+    if (m && !suppressGrab && Math.abs(e.clientX - m.x) + Math.abs(e.clientY - m.y) < 6 && performance.now() - m.at < 350) explainTap(e.clientX, e.clientY);
+    suppressGrab = false;
+  });
   board.addEventListener('dblclick', function (e) {
     if (touchMode) return;
     rope(eventWorldPoint(e.clientX, e.clientY));
@@ -381,7 +497,7 @@
     updateMarks();
     if (practice) updatePractice(Number(shown[0]));
     else updateGuide({ deliveredCount: Number(shown[0]) });
-    $('hud-ropes').textContent = String(game.ropesLeft);
+    $('hud-ropes').textContent = t('hud.ropesLeft', { n: game.ropesLeft });
   }
 
   /**
@@ -402,7 +518,7 @@
     guide.ropeHintId = it.id;
     guide.ropeHintUntil = game.world.time + 6000;
     guide.ropeHintFrom = game.world.time + 1300; // after the "+amount" pop has risen away
-    callout(t(touchMode ? 'hint.ropeTouch' : 'hint.ropeMouse'), 6000);
+    callout(t('hint.ropeButton'), 6000);
   }
 
   function addPop(item, text, kind, life) {
@@ -416,10 +532,13 @@
     if (!marks) return;
     var now = game.world.time;
     marks.done = [];
+    marks.status = marks.status || new Map();
     game.world.items.forEach(function (it) {
       var st = marks.steady.get(it.id);
       if (!st) { st = Rules.createSteady(300); marks.steady.set(it.id, st); }
-      if (st.update(game.itemStatus(it), now) !== 'delivered') return;
+      var status = st.update(game.itemStatus(it), now);
+      marks.status.set(it.id, status);
+      if (status !== 'delivered') return;
       marks.done.push(it.id);
       if (!marks.popped.has(it.id)) {
         marks.popped.add(it.id);
@@ -446,7 +565,7 @@
     if (p.step === 'drag' && delivered > 0) {
       p.step = 'rope';
       p.ropeAt = now;
-      callout(t(touchMode ? 'practice.ropeTouch' : 'practice.ropeMouse'), 60000);
+      callout(t('practice.ropeButton'), 60000);
     } else if (p.step === 'rope' && game.world.items.some(function (it) { return it.roped; })) {
       p.step = 'switch';
       // the warning starts once the "tied" pop has faded, so the two do not overlap
@@ -462,18 +581,12 @@
 
   function guideState() {
     if (!guide) return null;
-    var g = { goal: !guide.delivered, goalText: t('guide.room'), dragId: null, dragText: t('guide.drag'), ringId: null, ropeId: null, ropeText: t(touchMode ? 'guide.ropeTouch' : 'guide.ropeMouse') };
-    // the pointer waits until the "+amount" pop has risen out of the way
-    if (practice && practice.step === 'rope' && game.world.time - practice.ropeAt > 1300) {
-      var target = game.world.items.find(function (x) { return game.itemStatus(x) === 'delivered' && !x.roped; });
-      if (target) g.ropeId = target.id;
-    }
+    var g = { goal: !guide.delivered, goalText: t('guide.room'), dragId: null, dragText: t('guide.drag'), ringId: null };
     if (!guide.grabbed) {
       var first = game.world.items.find(function (x) { return game.itemStatus(x) === 'truck'; });
       if (first) g.dragId = first.id;
     }
-    // the rope hint points at the item with a hand, not only text in the callout
-    if (guide.ropeHintId && game.world.time >= guide.ropeHintFrom && game.world.time < guide.ropeHintUntil) g.ropeId = guide.ropeHintId;
+    // rope hints pulse the item's own "tie" button (updateRopeButtons), no extra pointer
     return g;
   }
 
@@ -550,6 +663,7 @@
       updateHud();
       drawGame();
     }
+    updateRopeButtons();
     if (replay) stepReplay(dt);
   }
 

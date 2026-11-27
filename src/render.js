@@ -322,7 +322,8 @@
     var k = pop.age / life;
     ctx.save();
     ctx.globalAlpha = k < 0.7 ? 1 : 1 - (k - 0.7) / 0.3;
-    var y = pop.y - 70 - 60 * Math.min(1, pop.age / 600);
+    // rises above the on-screen tie button that sits just over the item
+    var y = pop.y - 110 - 90 * Math.min(1, pop.age / 600);
     plateText(ctx, pop.text, pop.x, y, '800 36px system-ui, sans-serif', '#ffffff', pop.kind === 'rope' ? 'rgba(30, 34, 38, 0.92)' : '#2e9d5b');
     ctx.restore();
   }
@@ -409,7 +410,9 @@
       ctx.textBaseline = 'middle';
       ctx.fillText(String(Math.max(1, Math.ceil(rem / 1000))), cx, cy);
       if (state.warning.label) {
-        var ly = state.warning.dir === 'down' ? cy - 200 : cy + 200;
+        // put the text where the furniture is not: items rest on the side current
+        // gravity points at (and their tie buttons sit just above them)
+        var ly = snap.g === 'down' || state.warning.dir === 'down' ? cy - 250 : cy + 200;
         plateText(ctx, state.warning.label, cx, ly, '800 52px system-ui, sans-serif', '#ffffff', 'rgba(22, 25, 28, 0.85)');
         if (state.warning.sub) plateText(ctx, state.warning.sub, cx, ly + 66, '700 34px system-ui, sans-serif', '#16191c', '#ffffff');
       }

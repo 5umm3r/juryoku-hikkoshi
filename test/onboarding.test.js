@@ -273,3 +273,31 @@ test('the rope target gets a hand and a label at the item, not only text elsewhe
   assert.ok(label, 'label drawn');
   assert.ok(Math.hypot(label.x - it.body.position.x, label.y - it.body.position.y) < 160);
 });
+
+// ---------- visible rope controls ----------
+
+test('rope button: tie shows only for an item resting in the room against a surface; untie for tied items', () => {
+  const base = { held: false, roped: false, inRoom: true, resting: true, touching: true, ropesLeft: 3 };
+  assert.equal(Rules.ropeAction(base), 'tie');
+  assert.equal(Rules.ropeAction({ ...base, roped: true }), 'untie');
+  assert.equal(Rules.ropeAction({ ...base, roped: true, inRoom: false }), 'untie');
+  assert.equal(Rules.ropeAction({ ...base, held: true }), null);
+  assert.equal(Rules.ropeAction({ ...base, inRoom: false }), null);
+  assert.equal(Rules.ropeAction({ ...base, resting: false }), null);
+  assert.equal(Rules.ropeAction({ ...base, touching: false }), null);
+  // no rope left: the button still shows so pressing it can say why
+  assert.equal(Rules.ropeAction({ ...base, ropesLeft: 0 }), 'tie');
+});
+
+test('rope reason: the first missing condition, as a short key', () => {
+  const base = { held: false, roped: false, inRoom: true, resting: true, touching: true, ropesLeft: 3 };
+  assert.equal(Rules.ropeBlockReason(base), null);
+  assert.equal(Rules.ropeBlockReason({ ...base, inRoom: false, resting: false }), 'reason.room');
+  assert.equal(Rules.ropeBlockReason({ ...base, resting: false }), 'reason.moving');
+  assert.equal(Rules.ropeBlockReason({ ...base, touching: false }), 'reason.touch');
+  assert.equal(Rules.ropeBlockReason({ ...base, ropesLeft: 0 }), 'reason.limit');
+  assert.equal(Rules.ropeBlockReason({ ...base, roped: true }), null);
+  for (const k of ['reason.room', 'reason.moving', 'reason.touch', 'reason.limit']) {
+    assert.ok(I18n.dict.ja[k] && I18n.dict.en[k], k);
+  }
+});

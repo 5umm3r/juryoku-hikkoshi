@@ -227,6 +227,29 @@
     };
   }
 
+  /**
+   * Which rope button an item shows. s: {held, roped, inRoom, resting, touching, ropesLeft}
+   * 'tie' for an item at rest in the room against a floor or wall, 'untie' for a
+   * tied item, otherwise none. With no rope left 'tie' still shows, so pressing
+   * it can say why.
+   */
+  function ropeAction(s) {
+    if (s.held) return null;
+    if (s.roped) return 'untie';
+    if (s.inRoom && s.resting && s.touching) return 'tie';
+    return null;
+  }
+
+  /** Why an item cannot be tied now (i18n key), or null when it can. */
+  function ropeBlockReason(s) {
+    if (s.roped) return null;
+    if (!s.inRoom) return 'reason.room';
+    if (!s.resting || s.held) return 'reason.moving';
+    if (!s.touching) return 'reason.touch';
+    if (s.ropesLeft <= 0) return 'reason.limit';
+    return null;
+  }
+
   /** localStorage key for the best bill: per daily stage number, or free play. */
   function bestKey(mode) {
     return mode.daily ? 'best.daily.' + mode.no : 'best.free';
@@ -235,6 +258,8 @@
   return {
     bestKey: bestKey,
     createSteady: createSteady,
+    ropeAction: ropeAction,
+    ropeBlockReason: ropeBlockReason,
     DIRS: DIRS,
     DIR_VECTORS: DIR_VECTORS,
     createRng: createRng,

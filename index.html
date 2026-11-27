@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#16191c">
   <title>juryoku-hikkoshi</title>
   <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="styles.css?v=8">
+  <link rel="stylesheet" href="styles.css?v=9">
 </head>
 <body>
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -16,6 +16,9 @@
     <symbol id="i-share" viewBox="0 0 24 24"><path d="M11 4h2v10h-2z"/><path d="M12 2l5 5h-10z"/><path d="M5 12h2v7h10v-7h2v9H5z"/></symbol>
     <symbol id="i-replay" viewBox="0 0 24 24"><path d="M4 5h2v14H4z"/><path d="M8 12l10-7v14z"/></symbol>
     <symbol id="i-back" viewBox="0 0 24 24"><path d="M10 5l-7 7 7 7v-4h10V9H10z"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><path d="M7 10V7a5 5 0 0 1 10 0v3h-2V7a3 3 0 0 0-6 0v3z"/><rect x="5" y="10" width="14" height="11"/></symbol>
+    <symbol id="i-unlock" viewBox="0 0 24 24"><path d="M7 10V7a5 5 0 0 1 9.6-2l-1.8.9A3 3 0 0 0 9 7v3z"/><rect x="5" y="10" width="14" height="11"/></symbol>
+    <symbol id="i-move" viewBox="0 0 24 24"><path d="M12 2l4 4h-3v5h5V8l4 4-4 4v-3h-5v5h3l-4 4-4-4h3v-5H6v3l-4-4 4-4v3h5V6H8z"/></symbol>
     <symbol id="i-truck" viewBox="0 0 24 24"><path d="M2 6h12v10H2z"/><path d="M15 9h4l3 3v4h-7z"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/></symbol>
   </svg>
 
@@ -81,11 +84,16 @@
         <div class="hud-item"><span class="hud-k" data-i18n="hud.time"></span><span id="hud-time" class="hud-v">60.0</span></div>
         <div class="hud-item"><span class="hud-k" data-i18n="hud.delivered"></span><span id="hud-delivered" class="hud-v">0/0</span></div>
         <div class="hud-item"><span class="hud-k" data-i18n="hud.estimate"></span><span id="hud-estimate" class="hud-v">¥0</span></div>
-        <button id="btn-rope" class="hud-item rope-btn" type="button"><span class="hud-k" data-i18n="hud.ropes"></span><span id="hud-ropes" class="hud-v">3</span></button>
+        <button id="btn-rope" class="hud-item rope-btn" type="button"><span class="hud-k" data-i18n="hud.ropes"></span><span id="hud-ropes" class="hud-v">残り3</span></button>
         <button id="btn-pause" class="icon-btn" type="button"><svg><use href="#i-pause"/></svg><span class="sr" data-i18n="hud.pause"></span></button>
       </header>
+      <div id="legend" class="legend">
+        <span class="lg"><span class="lg-chip lg-drag"><svg><use href="#i-move"/></svg><span data-i18n="legend.drag"></span></span><span data-i18n="legend.dragText"></span></span>
+        <span class="lg"><span class="lg-chip lg-tie"><svg><use href="#i-lock"/></svg><span data-i18n="legend.tie"></span></span><span data-i18n="legend.tieText"></span></span>
+      </div>
       <div id="stage" class="stage">
         <canvas id="board"></canvas>
+        <div id="rope-layer" class="rope-layer"></div>
         <div id="callout" class="callout" hidden></div>
         <div id="brief" class="brief" hidden>
           <div class="brief-sheet">
@@ -161,13 +169,13 @@
   </div>
 
   <script src="vendor/matter.min.js"></script>
-  <script src="src/i18n.js?v=8"></script>
-  <script src="src/rules.js?v=8"></script>
-  <script src="src/sim.js?v=8"></script>
-  <script src="src/storage.js?v=8"></script>
-  <script src="src/audio.js?v=8"></script>
-  <script src="src/render.js?v=8"></script>
-  <script src="src/share.js?v=8"></script>
-  <script src="src/app.js?v=8"></script>
+  <script src="src/i18n.js?v=9"></script>
+  <script src="src/rules.js?v=9"></script>
+  <script src="src/sim.js?v=9"></script>
+  <script src="src/storage.js?v=9"></script>
+  <script src="src/audio.js?v=9"></script>
+  <script src="src/render.js?v=9"></script>
+  <script src="src/share.js?v=9"></script>
+  <script src="src/app.js?v=9"></script>
 </body>
 </html>
