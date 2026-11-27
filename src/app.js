@@ -401,6 +401,7 @@
     guide.ropeHinted = true;
     guide.ropeHintId = it.id;
     guide.ropeHintUntil = game.world.time + 6000;
+    guide.ropeHintFrom = game.world.time + 1300; // after the "+amount" pop has risen away
     callout(t(touchMode ? 'hint.ropeTouch' : 'hint.ropeMouse'), 6000);
   }
 
@@ -472,7 +473,7 @@
       if (first) g.dragId = first.id;
     }
     // the rope hint points at the item with a hand, not only text in the callout
-    if (guide.ropeHintId && game.world.time < guide.ropeHintUntil) g.ropeId = guide.ropeHintId;
+    if (guide.ropeHintId && game.world.time >= guide.ropeHintFrom && game.world.time < guide.ropeHintUntil) g.ropeId = guide.ropeHintId;
     return g;
   }
 
