@@ -306,6 +306,27 @@
     plateText(ctx, text, c.x + Math.cos(ang) * 110, c.y + Math.sin(ang) * 80, GUIDE_FONT, '#ffffff', 'rgba(' + C.warn + ',0.95)');
   }
 
+  /** A paid item: green badge with a check mark. */
+  function drawCheck(ctx, x, y) {
+    ctx.fillStyle = '#2e9d5b';
+    ctx.beginPath(); ctx.arc(x, y, 22, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.moveTo(x - 10, y + 1); ctx.lineTo(x - 3, y + 9); ctx.lineTo(x + 11, y - 8); ctx.stroke();
+  }
+
+  /** Short text that rises from where something happened and fades out. */
+  function drawPop(ctx, pop) {
+    var life = pop.life || 1600;
+    if (pop.age > life) return;
+    var k = pop.age / life;
+    ctx.save();
+    ctx.globalAlpha = k < 0.7 ? 1 : 1 - (k - 0.7) / 0.3;
+    var y = pop.y - 70 - 60 * Math.min(1, pop.age / 600);
+    plateText(ctx, pop.text, pop.x, y, '800 36px system-ui, sans-serif', '#ffffff', pop.kind === 'rope' ? 'rgba(30, 34, 38, 0.92)' : '#2e9d5b');
+    ctx.restore();
+  }
+
   /** Hand pointing at an item, with "drag this". */
   function drawDragHint(ctx, x, y, text, time) {
     var bob = Math.sin(time / 180) * 8;
@@ -352,9 +373,15 @@
       drawItem(ctx, info, b[1], b[2], b[3], !!b[4], !!b[5], state.heldId === b[0], state.time);
     });
 
-    if (guide && (guide.dragId || guide.ringId)) {
+    var marks = state.marks;
+    if (marks) {
+      var done = marks.done || [];
+      snap.bodies.forEach(function (b) { if (done.indexOf(b[0]) >= 0) drawCheck(ctx, b[1], b[2]); });
+    }
+    if (guide && (guide.dragId || guide.ringId || guide.ropeId)) {
       snap.bodies.forEach(function (b) {
         if (b[0] === guide.dragId) drawDragHint(ctx, b[1], b[2], guide.dragText, state.time);
+        if (b[0] === guide.ropeId) drawDragHint(ctx, b[1], b[2], guide.ropeText, state.time);
         if (b[0] === guide.ringId) {
           ctx.strokeStyle = 'rgba(' + C.warn + ',0.95)';
           ctx.lineWidth = 6;
@@ -364,6 +391,8 @@
         }
       });
     }
+
+    if (marks && marks.pops) marks.pops.forEach(function (pp) { drawPop(ctx, pp); });
 
     var whole = { x: state.bounds.left, y: state.bounds.top, w: state.bounds.right - state.bounds.left, h: state.bounds.bottom - state.bounds.top };
     if (state.warning) {

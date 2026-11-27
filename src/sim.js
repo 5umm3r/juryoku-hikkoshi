@@ -701,6 +701,10 @@
       toggleRope: toggleRope,
       /** The bill if time ran out now. */
       estimate: function () { return billFor(currentItems()); },
+      /** Practice: turn gravity `inMs` from now, warned like a scheduled switch. */
+      queueSwitch: function (dir, inMs) {
+        schedule.push({ at: world.time + inMs, dir: dir, warned: false, done: false });
+      },
       itemStatus: itemStatus,
       get ropesLeft() { return cfg.ropesMax - ropedCount(); },
       layout: opts.layout || 'landscape',

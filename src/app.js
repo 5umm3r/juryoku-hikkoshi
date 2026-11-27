@@ -34,6 +34,13 @@
   var tap = null;
   var toastTimer = 0;
   var calloutTimer = 0;
+  // before play: a work order (and, the first time, a practice run)
+  var briefing = false;
+  var briefKind = null;
+  var practice = null; // {step: drag|rope|switch|done, switchedAt}
+  // live feedback: badges on paid items and rising amounts
+  var marks = null;
+  var PRACTICE_CONFIG = { bag: { box: 1, fridge: 0, piano: 0, fishbowl: 0 }, firstAt: 9999, duration: 3600 };
   // per-game guidance, driven by what the player has done (not by play count)
   var guide = null;
   var lastResult = null;
@@ -75,13 +82,73 @@
   }
 
   // ---------- game ----------
-  function start(m) {
+  /** Title/retry entry: practice once, then the work order before every job. */
+  function begin(m) {
+    if (!Store.get('practiceDone', false)) {
+      start(m, true);
+      showBrief('practice');
+    } else {
+      start(m, false);
+      showBrief('job');
+    }
+  }
+
+  function showBrief(kind) {
+    briefKind = kind;
+    briefing = true;
+    var main, sub, go, kicker;
+    if (kind === 'job') {
+      var total = game.order.reduce(function (s, k) { return s + game.cfg.kinds[k].reward; }, 0);
+      kicker = t('brief.kicker'); main = t('brief.main');
+      sub = t('brief.sub', { n: game.order.length, yen: yen(total) }); go = t('brief.go');
+    } else if (kind === 'practice') {
+      kicker = t('practice.kicker'); main = t('practice.main'); sub = t('practice.sub'); go = t('practice.go');
+    } else {
+      kicker = t('practice.doneKicker'); main = t('practice.doneMain'); sub = t('practice.doneSub'); go = t('practice.doneGo');
+    }
+    $('brief-kicker').textContent = kicker;
+    $('brief-main').textContent = main;
+    $('brief-sub').textContent = sub;
+    $('brief-go').textContent = go;
+    $('btn-skip-practice').hidden = kind !== 'practice';
+    $('brief').hidden = false;
+  }
+
+  function closeBrief() {
+    if (!briefing) return;
+    Sfx.unlock();
+    $('brief').hidden = true;
+    briefing = false;
+    dropDelta = true;
+    if (briefKind === 'practiceDone') {
+      start(mode, false); // the done sheet already said what the job is
+    } else if (briefKind === 'practice') {
+      callout(t('practice.drag'), 60000);
+    }
+  }
+  $('brief').addEventListener('click', function (e) {
+    if (e.target.closest && e.target.closest('#btn-skip-practice')) return;
+    closeBrief();
+  });
+  $('btn-skip-practice').addEventListener('click', function () {
+    Store.set('practiceDone', true);
+    $('brief').hidden = true;
+    briefing = false;
+    start(mode, false);
+    showBrief('job');
+  });
+
+  function start(m, isPractice) {
     mode = m;
     var firstPlay = !Store.get('tutorialDone', false);
     show('game');
     var sr = stage.getBoundingClientRect();
     var layout = sr.height > sr.width * 1.05 ? 'portrait' : 'landscape';
-    game = Sim.createGame({ seed: m.seed, firstPlay: firstPlay, layout: layout });
+    game = Sim.createGame({ seed: isPractice ? 1 : m.seed, firstPlay: firstPlay, layout: layout, config: isPractice ? PRACTICE_CONFIG : undefined });
+    practice = isPractice ? { step: 'drag', switchedAt: null } : null;
+    marks = { steady: new Map(), popped: new Set(), pops: [] };
+    briefing = false;
+    $('brief').hidden = true;
     ropeArmed = false;
     $('btn-rope').classList.remove('armed');
     info = new Map();
@@ -200,6 +267,7 @@
     var r = game.toggleRope(item);
     if (r.ok && r.roped) {
       Store.set('ropeUsed', true);
+      addPop(item, t('pop.roped'), 'rope', 2600);
       if (guide) guide.ropeHintId = null;
       hideCallout();
     }
@@ -297,7 +365,7 @@
   var hitTimer = 0;
   function updateHud() {
     if (!game) return;
-    $('hud-time').textContent = (game.timeLeft / 1000).toFixed(1);
+    $('hud-time').textContent = practice ? t('hud.practice') : t('hud.sec', { s: (game.timeLeft / 1000).toFixed(1) });
     var est = game.estimate();
     var shown = hudSteady.update(est.deliveredCount + '|' + est.itemCount + '|' + est.total, game.world.time).split('|');
     $('hud-delivered').textContent = shown[0] + '/' + shown[1];
@@ -310,7 +378,9 @@
       hitTimer = setTimeout(function () { ev.classList.remove('hit'); }, 500);
     }
     lastDamage = est.damage;
-    updateGuide({ deliveredCount: Number(shown[0]) });
+    updateMarks();
+    if (practice) updatePractice(Number(shown[0]));
+    else updateGuide({ deliveredCount: Number(shown[0]) });
     $('hud-ropes').textContent = String(game.ropesLeft);
   }
 
@@ -334,14 +404,75 @@
     callout(t(touchMode ? 'hint.ropeTouch' : 'hint.ropeMouse'), 6000);
   }
 
+  function addPop(item, text, kind, life) {
+    if (!marks) return;
+    var p = item.body.position;
+    marks.pops.push({ x: p.x, y: p.y, text: text, kind: kind, life: life, born: game.world.time });
+  }
+
+  /** Badge on items that would be paid now; "+amount" the first time each one counts. */
+  function updateMarks() {
+    if (!marks) return;
+    var now = game.world.time;
+    marks.done = [];
+    game.world.items.forEach(function (it) {
+      var st = marks.steady.get(it.id);
+      if (!st) { st = Rules.createSteady(300); marks.steady.set(it.id, st); }
+      if (st.update(game.itemStatus(it), now) !== 'delivered') return;
+      marks.done.push(it.id);
+      if (!marks.popped.has(it.id)) {
+        marks.popped.add(it.id);
+        addPop(it, '+' + yen(game.cfg.kinds[it.kind].reward), 'paid', 1600);
+      }
+    });
+    marks.pops = marks.pops.filter(function (p) { return now - p.born < p.life; });
+  }
+
+  function marksState() {
+    if (!marks) return null;
+    var now = game.world.time;
+    return {
+      done: marks.done || [],
+      pops: marks.pops.map(function (p) { return { x: p.x, y: p.y, text: p.text, kind: p.kind, life: p.life, age: now - p.born }; })
+    };
+  }
+
+  /** Practice: carry one box in, tie it down, watch gravity turn, then the job. */
+  function updatePractice(delivered) {
+    var p = practice;
+    var now = game.world.time;
+    if (delivered > 0 && guide) guide.delivered = true; // the goal guide has done its job
+    if (p.step === 'drag' && delivered > 0) {
+      p.step = 'rope';
+      p.ropeAt = now;
+      callout(t(touchMode ? 'practice.ropeTouch' : 'practice.ropeMouse'), 60000);
+    } else if (p.step === 'rope' && game.world.items.some(function (it) { return it.roped; })) {
+      p.step = 'switch';
+      // the warning starts once the "tied" pop has faded, so the two do not overlap
+      game.queueSwitch(game.layout === 'portrait' ? 'right' : 'up', 5800);
+      callout(t('practice.switch'), 60000);
+    } else if (p.step === 'switch' && p.switchedAt !== null && now - p.switchedAt > 2600) {
+      p.step = 'done';
+      hideCallout();
+      Store.set('practiceDone', true);
+      showBrief('practiceDone');
+    }
+  }
+
   function guideState() {
     if (!guide) return null;
-    var g = { goal: !guide.delivered, goalText: t('guide.room'), dragId: null, dragText: t('guide.drag'), ringId: null };
+    var g = { goal: !guide.delivered, goalText: t('guide.room'), dragId: null, dragText: t('guide.drag'), ringId: null, ropeId: null, ropeText: t(touchMode ? 'guide.ropeTouch' : 'guide.ropeMouse') };
+    // the pointer waits until the "+amount" pop has risen out of the way
+    if (practice && practice.step === 'rope' && game.world.time - practice.ropeAt > 1300) {
+      var target = game.world.items.find(function (x) { return game.itemStatus(x) === 'delivered' && !x.roped; });
+      if (target) g.ropeId = target.id;
+    }
     if (!guide.grabbed) {
       var first = game.world.items.find(function (x) { return game.itemStatus(x) === 'truck'; });
       if (first) g.dragId = first.id;
     }
-    if (guide.ropeHintId && game.world.time < guide.ropeHintUntil) g.ringId = guide.ropeHintId;
+    // the rope hint points at the item with a hand, not only text in the callout
+    if (guide.ropeHintId && game.world.time < guide.ropeHintUntil) g.ropeId = guide.ropeHintId;
     return g;
   }
 
@@ -364,6 +495,10 @@
       } else if (e.type === 'switch') {
         warning = null;
         if (guide) guide.lastSwitch = game.world.time;
+        if (practice && practice.step === 'switch') {
+          practice.switchedAt = game.world.time;
+          game.world.items.forEach(function (it) { if (it.roped) addPop(it, t('pop.roped'), 'rope', 2600); });
+        }
         Sfx.beep(true);
       } else if (e.type === 'contact') {
         if (e.speed > 3) Sfx.thud(e.speed / 16);
@@ -393,7 +528,8 @@
       time: game.world.time,
       warning: warning ? { dir: warning.dir, remaining: warning.at - game.world.time, label: t('warn.dir', { dir: t('dir.' + warning.dir) }), sub: guide && guide.explainFall ? t('warn.fall') : null } : null,
       labels: { bay: t('area.bay'), room: t('area.room'), door: t('area.door') },
-      guide: guideState()
+      guide: guideState(),
+      marks: marksState()
     });
   }
 
@@ -406,7 +542,9 @@
   }
 
   function frameStep(dt) {
-    if (game && !game.ended && !paused && !screens.game.hidden) {
+    if (game && briefing && !screens.game.hidden) {
+      drawGame(); // the job site stays visible behind the work order; time does not run
+    } else if (game && !game.ended && !paused && !screens.game.hidden) {
       handleEvents(game.advance(dt));
       updateHud();
       drawGame();
@@ -432,7 +570,11 @@
   });
   $('btn-pause').addEventListener('click', function () { pause(true); });
   $('btn-resume').addEventListener('click', function () { pause(false); });
-  $('btn-quit').addEventListener('click', function () { game = null; renderTitle(); });
+  $('btn-quit').addEventListener('click', function () {
+    game = null; practice = null; briefing = false;
+    $('brief').hidden = true; hideCallout();
+    renderTitle();
+  });
 
   // ---------- result ----------
   function stageLabel() {
@@ -539,7 +681,7 @@
     })();
   });
   $('btn-retry').addEventListener('click', function () {
-    start(mode.daily ? mode : { daily: false, seed: (Math.random() * 4294967296) >>> 0 });
+    begin(mode.daily ? mode : { daily: false, seed: (Math.random() * 4294967296) >>> 0 });
   });
   $('btn-menu').addEventListener('click', function () { game = null; renderTitle(); });
 
@@ -586,16 +728,16 @@
   $('btn-daily').addEventListener('click', function () {
     Sfx.unlock();
     var d = daily();
-    start({ daily: true, no: d.no, seed: d.seed });
+    begin({ daily: true, no: d.no, seed: d.seed });
   });
   $('btn-free').addEventListener('click', function () {
     Sfx.unlock();
-    start({ daily: false, seed: (Math.random() * 4294967296) >>> 0 });
+    begin({ daily: false, seed: (Math.random() * 4294967296) >>> 0 });
   });
 
   renderTitle();
   requestAnimationFrame(loop);
 
   // test hook for automated checks, only with ?debug in the URL
-  if (DEBUG) window.__jh = { get game() { return game; }, get paused() { return paused; }, get mc() { return mc; }, tick: function (ms, n) { for (var i = 0; i < (n || 1); i++) frameStep(ms); }, start: start, pause: pause };
+  if (DEBUG) window.__jh = { get game() { return game; }, get paused() { return paused; }, get mc() { return mc; }, get briefing() { return briefing; }, get practice() { return practice; }, closeBrief: closeBrief, tick: function (ms, n) { for (var i = 0; i < (n || 1); i++) frameStep(ms); }, start: start, pause: pause };
 })();

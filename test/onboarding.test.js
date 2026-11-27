@@ -213,3 +213,63 @@ test('HUD value holder ignores a value that flips back within the hold time', ()
   assert.equal(s.update('B', 1300), 'A');
   assert.equal(s.update('B', 1400), 'B');
 });
+
+// ---------- goal feedback and practice ----------
+
+test('queueSwitch: practice can turn gravity on demand, with the usual warning first', () => {
+  const game = boxGame({ duration: 600 });
+  advanceFor(game, 500);
+  assert.equal(game.schedule.length, 0, 'no scheduled switches in this config');
+  game.queueSwitch('up', 3000);
+  const seen = [];
+  for (let t = 0; t < 3600; t += FRAME) game.advance(FRAME).forEach((e) => { if (e.type === 'warn' || e.type === 'switch') seen.push([e.type, Math.round(game.world.time)]); });
+  assert.equal(seen[0][0], 'warn');
+  assert.ok(seen[0][1] < 600, `warn right away at ${seen[0][1]}`);
+  assert.equal(seen[1][0], 'switch');
+  assert.ok(Math.abs(seen[1][1] - 3500) < 40, `switch at ${seen[1][1]}`);
+  assert.equal(game.world.gravity, 'up');
+});
+
+function arcRecordingCtx() {
+  const r = recordingCtx();
+  const arcs = [];
+  const base = r.ctx;
+  const ctx = new Proxy({}, {
+    get(target, prop) {
+      if (prop === 'arc') return (x, y, rad) => arcs.push({ x, y, r: rad });
+      return base[prop];
+    },
+    set(target, prop, v) { base[prop] = v; return true; }
+  });
+  return { ctx, calls: r.calls, arcs };
+}
+
+test('live play marks paid items with a badge and pops the amount; replay does not', () => {
+  const game = boxGame();
+  advanceFor(game, 200);
+  const it = game.world.items[0];
+  const p = it.body.position;
+  const live = arcRecordingCtx();
+  Render.draw(live.ctx, 1280, 740, liveState(game, {
+    marks: { done: [it.id], pops: [{ x: p.x, y: p.y, text: 'PLUS-1234', age: 300 }] }
+  }));
+  const badge = live.arcs.find((a) => Math.hypot(a.x - p.x, a.y - p.y) < 40 && a.r >= 18 && a.r <= 30);
+  assert.ok(badge, 'a badge circle on the item');
+  const pop = live.calls.find((c) => c.text === 'PLUS-1234');
+  assert.ok(pop && pop.y < p.y, 'the amount rises above the item');
+  const replay = arcRecordingCtx();
+  Render.draw(replay.ctx, 1280, 740, liveState(game));
+  assert.ok(!replay.arcs.find((a) => Math.hypot(a.x - p.x, a.y - p.y) < 40 && a.r >= 18 && a.r <= 30));
+  assert.ok(!replay.calls.some((c) => c.text === 'PLUS-1234'));
+});
+
+test('the rope target gets a hand and a label at the item, not only text elsewhere', () => {
+  const game = boxGame();
+  advanceFor(game, 200);
+  const it = game.world.items[0];
+  const { ctx, calls } = recordingCtx();
+  Render.draw(ctx, 1280, 740, liveState(game, { guide: { ropeId: it.id, ropeText: 'HOLD-HERE' } }));
+  const label = calls.find((c) => c.text === 'HOLD-HERE');
+  assert.ok(label, 'label drawn');
+  assert.ok(Math.hypot(label.x - it.body.position.x, label.y - it.body.position.y) < 160);
+});
